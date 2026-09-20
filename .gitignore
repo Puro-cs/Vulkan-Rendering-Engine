@@ -1,0 +1,25 @@
+build/
+out/
+vcpkg_installed/
+CMakeUserPresets.json
+
+# lokale vcpkg Installation
+.vcpkg/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+
+# build Artefakte
+*.obj
+*.pdb
+*.ilk
+*.dll
+*.lib
+*.exe
+
+# Compiled shaders copied next to the sources (see CMakeLists.txt) and runtime output
+src/shaders/*.spv
+src/crashes/
+src/imgui.ini
