@@ -10,6 +10,9 @@ revised on 2026-09-20 after the ray-query render mode was removed (no status cha
 `tr:szenenmanagement` got wider) and on 2026-09-21 after the acceleration structures, Forward+, planar reflections and
 the dead panel controls were removed (no status changed; the engine got closer to the intended use, students writing
 simple shaders, because a mesh shader now sees seven bindings instead of fourteen and no hidden depth pre-pass).
+Also on 2026-09-21 the owner amended two requirement texts, with no code change: `architektur_techstack` names tinygltf
+(glTF 2.0) instead of tinyobjloader and went from partly to met; `basis_infrastruktur` names Vulkan 1.3 dynamic
+rendering instead of render pass objects (`VkRenderPass` / `VkFramebuffer`) and is met without a note.
 Every gap that needs code the tutorial does not have falls under Rule 1 of `docs/CODE_CHANGE_RULES.md` (proposal,
 owner approval); none of them can be closed by deletion alone.
 
@@ -17,8 +20,8 @@ owner approval); none of them can be closed by deletion alone.
 
 | ID | Priority | Requirement | Status |
 |---|---|---|---|
-| `architektur_techstack` | Must | Component architecture; C++20, Vulkan SDK, CMake, GLFW, GLM, tinyobjloader, Slang; Windows 11 | partly (tinyobjloader missing) |
-| `basis_infrastruktur` | Must | Instance, swap chain, render pass, frame and depth buffers preconfigured and hidden | met (dynamic rendering, see note) |
+| `architektur_techstack` | Must | Component architecture; C++20, Vulkan SDK, CMake, GLFW, GLM, tinygltf (glTF 2.0), Slang; Windows 11 | met |
+| `basis_infrastruktur` | Must | Instance, swap chain, dynamic rendering (Vulkan 1.3), colour and depth attachments preconfigured and hidden | met |
 | `synchronisation_speicherverwaltung` | Must | Frames in flight, command buffers, sync objects, GPU memory hidden | met |
 | `pipeline_shader_automatisierung` | Must | Abstract pipeline configurations translated to Vulkan; shaders compiled to `VkShaderModule` | partly (no configurable pipelines) |
 | `descriptor` | Must | Descriptor pools, set layouts, UBO mapping hidden | met |
@@ -39,32 +42,41 @@ owner approval); none of them can be closed by deletion alone.
 Thesis refs: `ap:component`, WB 1-7, `app:bestandsaufnahme_pc-pool`.
 
 **Requirement.** Component-based architecture. Mandatory technologies: C++20, the current Vulkan SDK, CMake, GLFW, GLM,
-tinyobjloader and Slang as shader language. Development must be possible on Windows 11.
+tinygltf (glTF 2.0 as model format) and Slang as shader language. Development must be possible on Windows 11.
+(Amended by the owner on 2026-09-21: the original entry named tinyobjloader.)
 
 **Code today.** `Entity` + `Component` with `TransformComponent`, `CameraComponent`, `MeshComponent` (`src/entity.h`,
 `src/component.h`). `CXX_STANDARD 20` in `CMakeLists.txt`; Vulkan SDK 1.4 through `VULKAN_SDK`; CMake presets for
-Visual Studio 2026; GLFW in `DesktopPlatform`; GLM throughout; every shader in `src/shaders/` is Slang and compiled by
-`slangc`. Builds and runs on Windows 11 (`docs/BUILD.md`).
+Visual Studio 2026; GLFW in `DesktopPlatform`; GLM throughout; models are parsed with tinygltf 3.0.0 from `vcpkg.json`
+(`src/model_loader.cpp`, implementation compiled into that one translation unit, glTF 2.0); every shader in
+`src/shaders/` is Slang and compiled by `slangc`. Builds and runs on Windows 11 (`docs/BUILD.md`).
 
-**Gap.** tinyobjloader is not used anywhere. Models are parsed with tinygltf (`src/model_loader.cpp`, glTF 2.0 only)
-and `vcpkg.json` does not list tinyobjloader. The upstream tutorial only ships a find module for it and no OBJ loader
-code, so an OBJ path would be new code (Rule 1). Alternative: amend the thesis requirement to tinygltf.
+**Gap.** None. tinyobjloader is not used and not listed in `vcpkg.json`; there is no OBJ path, neither here nor
+upstream (the tutorial only shipped a find module for it). tinygltf decodes no images here (`TINYGLTF_NO_STB_IMAGE`);
+that limitation belongs to `texture_pipeline`.
 
 ### `basis_infrastruktur` — Encapsulated base infrastructure (Must)
 
 Thesis refs: `ki:1_swapchain`, `ki:2_render pass`.
 
-**Requirement.** Instance creation, swap chain management, render pass setup and the frame and depth buffers are
-preconfigured statically and managed in the background.
+**Requirement.** Instance creation, swap chain management, the pass setup with Vulkan 1.3 dynamic rendering
+(`vkCmdBeginRendering`, no `VkRenderPass` / `VkFramebuffer` objects) and the colour and depth attachments are
+preconfigured statically and managed in the background. (Amended by the owner on 2026-09-21: the original entry named
+render pass setup and frame buffers, i.e. render pass objects. The thesis label `ki:2_render pass` is unchanged.)
 
 **Code today.** `Renderer::Initialize()` (`src/renderer_core.cpp`) creates instance, debug messenger, surface, device,
 swap chain, image views, depth image, command pools and sync objects; a resize recreates the swap chain
-(`src/renderer_rendering.cpp`). `main.cpp` only calls `Engine::Initialize()`.
+(`src/renderer_rendering.cpp`). `main.cpp` only calls `Engine::Initialize()`. Dynamic rendering is mandatory: device
+selection rejects a GPU without the `dynamicRendering` feature and the feature is enabled at device creation
+(`src/renderer_core.cpp`). `setupDynamicRendering()` (`src/renderer_rendering.cpp`, run again on every swap-chain
+recreation) prepares the `vk::RenderingAttachmentInfo` for colour and depth and the `vk::RenderingInfo`; the four passes
+of a frame (opaque to the off-screen image, composite, transparent, ImGui) are each a `beginRendering` /
+`endRendering` pair that binds its attachments. Every pipeline is created without a render pass handle, with a
+`vk::PipelineRenderingCreateInfo` in its `pNext` chain (`src/renderer_pipelines.cpp`, `src/imgui_system.cpp`). Image
+layout transitions are explicit `pipelineBarrier2` calls, since there are no subpass dependencies. No `VkRenderPass`
+or `VkFramebuffer` exists in `src/`.
 
-**Gap.** None in code. Note for the thesis: the engine uses Vulkan 1.3 dynamic rendering. There are no `VkRenderPass`
-or `VkFramebuffer` objects; the colour attachment (swap-chain image) and the depth attachment are bound per pass through
-`vk::RenderingInfo`. The requirement text should say "render passes (dynamic rendering) and attachments" or explain
-the difference.
+**Gap.** None.
 
 ### `synchronisation_speicherverwaltung` — Synchronisation and memory management (Must)
 
@@ -199,7 +211,6 @@ optionally overwritten by the first glTF camera. Lights: `KHR_lights_punctual` l
   binding 6 and loops over the lights (Rule 1); it is also an obvious first exercise for students.
 - Meshes built in code (`MeshComponent::CreateSphere()`, `SetVertices()`) get GPU buffers only if the caller also
   invokes `Renderer::EnqueueEntityPreallocationBatch()`; entities without resources are skipped by `Render()`.
-- Model format is glTF only (see `architektur_techstack`).
 
 ### `shader_verwaltung` — Generic shader and parameter management (Must)
 
@@ -264,5 +275,5 @@ Every "hide it" requirement (`ki:*`) is covered by the tutorial engine as ported
 requirement (`ns:*`, `fa:*`) is open: the tutorial is a demo application whose renderer does the whole frame itself,
 so there was never a student-facing frame, pipeline or parameter API to keep. Those three (`lifecycle`,
 `einfache_pipeline`, `shader_verwaltung`) need new code and therefore owner approval under Rule 1, and they are the
-ones a student would touch first. Smaller items: tinyobjloader (or a thesis amendment), raster shaders that use the
+ones a student would touch first. Smaller items: raster shaders that use the
 scene lights, a `LightComponent`, PNG textures, the remaining start-up validation message, the optional ASCII view.
