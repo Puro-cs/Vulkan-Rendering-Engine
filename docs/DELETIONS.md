@@ -137,6 +137,58 @@ source changed: `composite.spv`, `imgui.spv` and `pbr.spv` are byte-identical (S
 the step, and `texturedMesh.spv` was not created again. A search of `src/` finds none of the removed names any more.
 Not verified by the assistant: run time (the panel, the picture, the validation output); the owner's run is pending.
 
+### Real lighting (2026-09-21, planned change 3): `pbr.slang` from the tutorial's `pbr_full.slang`
+
+Third step of `docs/IMPLEMENTATION_PLAN.md`. Rule 3: the tutorial's `shaders/pbr_full.slang` (635 lines, pinned commit
+`6dd48b5`) was copied byte for byte over `src/shaders/pbr.slang`; the file keeps the name the engine loads, so no C++
+changed for it. Until then the port carried the tutorial's stripped 109-line `pbr.slang` (fixed light direction, no
+BRDF); `pbr_full.slang` is the shader the tutorial itself loaded as `pbr.slang` until its commit `ccc8dd8`. Rule 2:
+the copy was then trimmed by deletion, following the owner's table in `docs/ROADMAP.md` (keep what the rasterization
+pipeline uses, drop what belongs to a removed rendering option or needs ray tracing). Result: 351 lines, of which 3
+are forced edits (below) and all others are tutorial lines. Line numbers are those of the tutorial file:
+
+| Dropped from `pbr_full.slang` | Lines | Reason |
+|---|---|---|
+| Bindings 7 and 8 (Forward+ tile lists), 10 (`reflectionMap`), 11 (TLAS), 12 and 13 (ray-query shared buffers), with their comments and the two `#if !defined(PLATFORM_ANDROID)` / `#endif` pairs around them | 58, 60-74 | Those bindings left the PBR set layout on 2026-09-21. Binding 6 (`lightBuffer`), which sat inside the first guard, stays. |
+| `RASTER_SHADOW_EPS` and `traceShadowOccluded()` | 78-116 | Ray-traced shadows need the acceleration structures and the ray-tracing extensions, removed on 2026-09-21. |
+| `PSMain`: the Forward+ tile and depth-slice computation, `useForwardPlus`, `base` / `count`, `forceGlobal`, and the Forward+ light loop | 210-246, 248-320 | The option "Forward+ (tiled light culling)" and its compute pass were removed on 2026-09-21. `ubo.padding1`, `nearZ`, `farZ`, `slicesZ` are no longer read. |
+| `PSMain`: four comment lines about the fall-back condition of the global loop, and the first comment line inside it | 322-325, 327 | They only describe the deleted condition. |
+| `PSMain`: the shadow test inside the global light loop (`ubo.padding2`, `traceShadowOccluded()`) | 368-373 | Same reason as `traceShadowOccluded()`. |
+| `PSMain`: the `#endif` of the guard opened at 210 | 389 | Android was removed from the port; the guarded content stays. |
+| `PSMain`: the clip-plane discard of the reflection pass, and the note that planar reflections are only applied in the glass path | 398-406 | Planar reflections were removed on 2026-09-21; C++ no longer writes `reflectionPass` / `clipPlaneWS`. |
+| `GlassPSMain`: the planar reflection sample (`refl`, `ubo.reflectionEnabled`, `ubo.reflectionVP`, `reflectionMap`) | 477-487 | Same reason. |
+| `GlassPSMain`: the Fresnel reflection mix (`F_view2`, `F_avg2`, `reflStrength`, `ubo.reflectionIntensity`) and the comment line that refers to it | 515-522, 524 | It mixed in the reflection sample; the "Reflection intensity" slider was removed on 2026-09-21. |
+| `GlassPSMain`: the whole Forward+ lighting block for glass with its guard | 540-617 | Light highlights on glass only exist as a tile loop. Known consequence: glass gets no light highlights. |
+
+Kept on purpose, although nothing reads them any more (tutorial lines of the kept light loop, left so that its body
+stays as close to the tutorial as possible): `float distToLight = 10000.0;` with `distToLight = d;` (only the shadow
+test read it) and `float visibility = 1.0;` (now a constant factor of 1). Unused in the tutorial file already and left
+alone: `import lighting_utils;` and `float3 G` in `PSMain`.
+
+What the shader needs is exactly what the engine provides: the compiled `pbr.spv` declares set 0 bindings 0 to 6,
+set 1 binding 0, the material push constants (last member at offset 112, as in `MaterialProperties`), the entry
+points `VSMain`, `PSMain` and `GlassPSMain`, and only the `Shader` capability. The UBO fields it reads are `model`,
+`view`, `proj`, `camPos`, `lightCount`, `scaleIBLAmbient`, `screenDimensions`, `exposure`, `gamma` and `padding0`.
+
+Behaviour that follows:
+
+- The scene lights are read by a shader again (binding 6, `ubo.lightCount`): directional, point, spot and emissive
+  lights with GGX specular plus diffuse. A scene without lights shows only the ambient term, 10 % of the surface
+  colour, plus emissive surfaces. The Viking room glTF has no lights, so until the light entity of this step exists
+  the room is dark.
+- `pbr.spv` is no longer byte-identical to the tutorial's `pbr.spv` (it cannot be: it is a different shader), and it
+  is not byte-identical to the tutorial's `pbr_full.spv` either, because of the trim. `composite.spv` and `imgui.spv`
+  are unchanged. The argument of the table "Removals of 2026-09-21: what stayed" for leaving `UniformBufferObject`
+  untouched now only holds for those two.
+- The light storage buffer and binding 6, kept on 2026-09-21 as "the hook for a student shader", are in use.
+
+Verification on 2026-09-21: the trim was built up in four cumulative stages in a scratch folder (uses in `PSMain`,
+uses in `GlassPSMain`, the shadow helper, the bindings), each compiled with `slangc` and the engine's flags; the file
+in the repository is identical to the last stage. A normalised diff against the tutorial file shows exactly three
+lines that are not tutorial lines, the forced edits. `spirv-val` passes. Debug build with 0 errors and 0 compiler
+warnings (the `MSB8028` warning is still printed); `composite.spv` and `imgui.spv` are byte-identical to before. Not
+verified by the assistant: the picture and the validation output; the owner's run is pending.
+
 ## Forced edits (code that had to change because of a deletion)
 
 | Date | File | Edit | Why |
@@ -166,12 +218,15 @@ Not verified by the assistant: run time (the panel, the picture, the validation 
 | 2026-09-21, planned change 2 | `renderer_rendering.cpp`, descriptor cold-init in `Render()` | three conditions lost their basic operand: `entityRes.basicDescriptorSets.empty() \|\| `, ` \|\| !entityRes.basicUboBindingWritten[currentFrame]`, ` \|\| !entityRes.basicImagesWritten[currentFrame]` | members deleted |
 | 2026-09-21, planned change 2 | `renderer_resources.cpp`, `createDescriptorSets()` and `updateDescriptorSetsForFrame()` | `usePBR ? *pbrDescriptorSetLayout : *descriptorSetLayout` became `*pbrDescriptorSetLayout`, and `usePBR ? res.pbrDescriptorSets : res.basicDescriptorSets` became `res.pbrDescriptorSets` (each once per function) | the second operand named a deleted member |
 | 2026-09-21, planned change 2 | 4 comments: `renderer.h` (1), `renderer_rendering.cpp` (1), `renderer_resources.cpp` (2) | words about the basic pipeline trimmed: ", Basic: b1", "for basic pipeline", "BOTH basic and", "for the basic pipeline" | comment referred to deleted code |
+| 2026-09-21, planned change 3 | `shaders/pbr.slang`, `PSMain` (tutorial `pbr_full.slang` line 326) | `if (forceGlobal \|\| !useForwardPlus \|\| (count == 0 && ubo.lightCount > 0)) {` became `{` | every name in the condition belongs to Forward+. The bare scope keeps the body of the global light loop unchanged |
+| 2026-09-21, planned change 3 | 2 comments in `shaders/pbr.slang` (tutorial lines 321 and 489) | "// Global light loop (fallback or forced debug)" lost "(fallback or forced debug)"; "// glass body + rim highlight, then add planar reflection contribution." became "// glass body + rim highlight." | comment referred to deleted code |
 
 ## Added code (the only exception to "deletions only")
 
 | Date | File | What | Why | Approved |
 |---|---|---|---|---|
 | 2026-09-13 | `src/imgui_system.cpp` | `static ImGuiKey GlfwKeyToImGuiKey(int key)` (line ~402) and modifier-key syncing in `HandleKeyboard()` | tutorial passes raw GLFW key codes to `ImGuiIO::AddKeyEvent()`; Dear ImGui 1.92 asserts (`IsNamedKeyOrMod`), first key press aborted Debug builds. Mapping mirrors `ImGui_ImplGlfw_KeyToImGuiKey()` of the official GLFW backend. | yes (owner) |
+| 2026-09-21, planned change 3 | `src/renderer_rendering.cpp`, `prepareFrameUboTemplate()` | two lines after the `gamma` write: the comment `// Match raster convention: ambient scale factor for simple IBL/ambient term.` and `frameUboTemplate.scaleIBLAmbient = 1.0f;` | The ambient term of `pbr.slang` is `albedo * ao * 0.1 * ubo.scaleIBLAmbient`. The tutorial only ever wrote that field in its ray-query UBO update (`renderer_rendering.cpp:1884-1886`), which the port removed, so the raster ambient term was 0. The two lines are the tutorial's own, with `ubo.` replaced by `frameUboTemplate.`; the tutorial's second comment line was left out because it talks about Ray Query. With 1.0 the ambient light is 10 % of the surface colour. | yes (owner, 2026-09-21: "the one with 1.0f", as close to the tutorial as possible) |
 
 ## How to append
 

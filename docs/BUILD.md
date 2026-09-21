@@ -89,14 +89,15 @@ glob, and a build tree that still lists a deleted shader fails in the `shaders` 
 
 - `ImGuiSystem::HandleKeyboard()` in the tutorial passes raw GLFW key codes to `ImGuiIO::AddKeyEvent()`. Dear ImGui 1.92
   asserts on that, so the first key press aborted a Debug build. Fixed 2026-09-13 with `GlfwKeyToImGuiKey()` in
-  `src/imgui_system.cpp` (mirrors the official GLFW backend mapping). This is the **only** code in the port that is
-  not in the tutorial. See `docs/DELETIONS.md`.
-- `pbr.slang`, the one mesh shader, lights the scene with one fixed direction (1, 1, 1). It is not PBR in the textbook
-  sense (no specular term, no BRDF). Its ambient term is multiplied by `scaleIBLAmbient`, which C++ never sets, so
-  unlit sides are black. Planned change 3 replaces it by the tutorial's full PBR shader. (The second mesh shader,
-  `texturedMesh.slang`, which added 10 % ambient, was removed on 2026-09-21.)
-- Scene lights are uploaded to a storage buffer (PBR set 0, binding 6) every frame, but no shader reads them. The
-  ray-query shader, which did, was removed on 2026-09-20.
+  `src/imgui_system.cpp` (mirrors the official GLFW backend mapping). Until planned change 3 this was the only code
+  in the port that is not in the tutorial; every later addition is listed under "Added code" in `docs/DELETIONS.md`.
+- Since 2026-09-21 (planned change 3) `pbr.slang` is the tutorial's full PBR shader, trimmed: it lights the scene
+  with the scene lights (storage buffer at PBR set 0, binding 6) and adds 10 % ambient (`scaleIBLAmbient` is set to
+  1.0 by C++ now). A scene without a light is therefore dark: only the ambient part and emissive surfaces show. The
+  Viking room glTF has no `KHR_lights_punctual` light, so the room stays dark until the scene gets a light entity
+  (the rest of planned change 3). Glass gets no light highlights: in the tutorial shader they only existed as a
+  Forward+ tile loop, which was removed. (The old 109-line `pbr.slang` used the fixed light direction (1, 1, 1); the
+  second mesh shader, `texturedMesh.slang`, was removed on 2026-09-21.)
 - "Sampler max anisotropy" recreates every sampler but does not rewrite the descriptor sets that reference the old
   ones (tutorial behaviour, found by reading the code, not run): expect validation messages when dragging it in Debug.
 - The "Exposure" slider goes down to 0.1, the code clamps at 0.2. Exposure affects the opaque scene only; transparent

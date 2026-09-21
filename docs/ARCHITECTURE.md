@@ -5,7 +5,8 @@ study system. Removed: physics, audio, Android / direct-to-display / Linux / mac
 opacity-micromap course, unused shaders, everything ray query (2026-09-20 the render mode, 2026-09-21 the acceleration
 structures and the raster shadow option), Forward+ with its depth pre-pass, planar reflections, the dead
 standalone `Pipeline` class (`pipeline.h/.cpp`), and the basic lighting path with `texturedMesh.slang`. What is left
-is one forward rasterization path with one mesh shader, `pbr.slang`. Details in `docs/DELETIONS.md`; the file-by-file
+is one forward rasterization path with one mesh shader, `pbr.slang` (since planned change 3 the tutorial's full PBR
+shader, trimmed). Details in `docs/DELETIONS.md`; the file-by-file
 comparison with the tutorial is `src/source-file-difference.md`.
 
 Intended use (owner, 2026-09-21): students who have never worked with Vulkan write their own simple shaders and
@@ -78,7 +79,7 @@ A fourth one, the standalone `Pipeline` class (`pipeline.h/.cpp`), was deleted o
 
 | Shader | Stage | Used by |
 |---|---|---|
-| `pbr.slang` | vert + frag | every mesh: base colour x `baseColorFactor` x (1 - metallic), alpha-mask `discard`, diffuse light from the fixed direction (1, 1, 1), ambient multiplied by `scaleIBLAmbient` (never set by C++, so 0). `GlassPSMain` blends the off-screen scene colour for glass. No BRDF yet (planned change 3) |
+| `pbr.slang` | vert + frag | every mesh. Since 2026-09-21 (planned change 3) it is the tutorial's `pbr_full.slang`, trimmed by deletion: material sampling (metallic-roughness or spec-gloss, normal map, occlusion, emissive, alpha-mask `discard`), a loop over all scene lights in the storage buffer (directional, point, spot, emissive; distance falloff, spot cone, GGX specular plus diffuse), ambient = 10 % of the surface colour (`0.1 * ubo.scaleIBLAmbient`, which C++ sets to 1.0), emissive. Output is linear; `composite` tone-maps. `GlassPSMain` shows the off-screen scene colour through glass (tint, rim, emissive surface term) and tone-maps itself, because glass is drawn after the composite pass. Without a light the scene shows only ambient and emissive |
 | `composite.slang` | vert + frag | fullscreen pass that draws the off-screen opaque colour to the swap chain (exposure, filmic tone map; gamma only on a non-sRGB swap chain) before the transparent pass |
 | `imgui.slang` | vert + frag | ImGuiSystem |
 | `common_types`, `pbr_utils`, `lighting_utils`, `tonemapping_utils` | modules | imported by the above, not compiled standalone |
@@ -97,13 +98,16 @@ mesh layout, the PBR one; the pipelines of planned change 4 will use it too:
 | Set 0, binding 0 | `UniformBufferObject` (model, view, proj, camPos, exposure, lightCount, screenDimensions, ...) |
 | Set 0, binding 1 | base colour texture |
 | Set 0, bindings 2 to 5 | metallic-roughness, normal, occlusion, emissive textures |
-| Set 0, binding 6 | storage buffer of `LightData` (scene lights, count in `ubo.lightCount`), fragment stage. In the C++ layout, but `pbr.slang` does not declare or read it yet |
+| Set 0, binding 6 | storage buffer of `LightData` (scene lights, count in `ubo.lightCount`), fragment stage. Read by the light loop of `pbr.slang`. Convention: for a directional light (`lightType == 1`) `position.xyz` holds the direction in which the light travels, so the shader uses `L = normalize(-light.position.xyz)`; `color.rgb` is colour times intensity |
 | Set 1, binding 0 | off-screen opaque scene colour (used by `GlassPSMain`) |
 | Push constants | `PushConstants` (material factors), fragment stage |
 
 `UniformBufferObject` still carries fields of removed features (`padding1`, `padding2`, `slicesZ`, reflection and
-ray-query fields). They are never written and are kept only so that the compiled shaders stay byte-identical to the
-tutorial's; see `docs/DELETIONS.md`.
+ray-query fields). They are never written, and since planned change 3 no shader reads them. They were kept on
+2026-09-21 so that the compiled shaders stayed byte-identical to the tutorial's; that still holds for `composite.spv`
+and `imgui.spv`, no longer for `pbr.spv`; see `docs/DELETIONS.md`. The fields `pbr.slang` reads are `model`, `view`,
+`proj`, `camPos`, `lightCount`, `scaleIBLAmbient`, `screenDimensions`, `exposure`, `gamma` and `padding0` (1 on an
+sRGB swap chain).
 
 ## One frame (`Renderer::Render`, `renderer_rendering.cpp`)
 

@@ -212,8 +212,10 @@ optionally overwritten by the first glTF camera. Lights: `KHR_lights_punctual` l
 
 - Lights are not components: no `LightComponent`, no entity-level API to add or move a light, only the
   renderer-level vector.
-- The raster shader `pbr.slang` ignores the light buffer and uses a fixed direction (1, 1, 1) plus ambient (the
-  second one, `texturedMesh.slang`, did the same and was removed on 2026-09-21). The engine side is in place: the scene lights are uploaded every frame to a storage buffer bound at
+- Closed on 2026-09-21 by planned change 3 (shader part): `pbr.slang` is now the tutorial's full PBR shader, trimmed,
+  and its light loop reads the light buffer. The rest of this item describes the state before, when `pbr.slang`
+  ignored the light buffer and used a fixed direction (1, 1, 1) plus ambient (the second shader,
+  `texturedMesh.slang`, did the same and was removed on 2026-09-21). The engine side is in place: the scene lights are uploaded every frame to a storage buffer bound at
   PBR set 0, binding 6, with the count in `ubo.lightCount`. But no shader reads it. `ray_query.slang` was the one
   shader that shaded with the lights (removed 2026-09-20) and Forward+ only culled them (removed 2026-09-21), so
   "light data provided to the shaders" holds for no shading pass. Closing this needs a raster shader that declares

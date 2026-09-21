@@ -496,6 +496,8 @@ void Renderer::prepareFrameUboTemplate(CameraComponent* camera) {
   frameUboTemplate.lightCount = static_cast<int>(lastFrameLightCount);
   frameUboTemplate.exposure = std::clamp(this->exposure, 0.2f, 4.0f);
   frameUboTemplate.gamma = this->gamma;
+  // Match raster convention: ambient scale factor for simple IBL/ambient term.
+  frameUboTemplate.scaleIBLAmbient = 1.0f;
   frameUboTemplate.screenDimensions = glm::vec2(swapChainExtent.width, swapChainExtent.height);
   frameUboTemplate.nearZ = camera->GetNearPlane();
   frameUboTemplate.farZ = camera->GetFarPlane();

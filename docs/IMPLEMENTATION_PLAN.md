@@ -104,6 +104,15 @@ the scene is dark except for the ambient part. Known consequences: `pbr.spv` is 
 tutorial's (the "kept on purpose" table in `DELETIONS.md` says so today), glass has no light highlights. Closes the
 light part of `tr:szenenmanagement`.
 
+Status: sub-steps 1 to 3 done on 2026-09-21. `pbr_full.slang` copied byte for byte over `pbr.slang`, then trimmed
+from 635 to 351 lines in four cumulative stages that were each compiled with `slangc`; 3 forced edits (one bare
+scope, two comments), every other line is a tutorial line; the compiled shader declares exactly set 0 bindings 0 to
+6, set 1 binding 0 and the material push constants. The two `scaleIBLAmbient` lines are in
+`prepareFrameUboTemplate()`. Debug build with 0 errors. Sub-steps 4 to 6 (`LightComponent`, the appended entity
+lights, the "Sun") are proposed in the chat as diffs, test-compiled in a scratch folder with the project's compiler
+settings, and wait for the owner's approval. Until then the Viking room shows only its 10 % ambient light. The
+owner's run is pending. Log: `docs/DELETIONS.md`.
+
 ## Step 4: named pipelines (Rule 1, M)
 
 1. Description: a small struct (shader file, cull mode, depth test, blending) and enums, without Vulkan types in the

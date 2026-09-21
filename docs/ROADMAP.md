@@ -26,7 +26,11 @@ remaining steps keep their numbers, because this file and the plan refer to them
    completely, together with its compiled `.spv` and everything that loads it, so that nothing is left that could
    fail at run time. Every object is drawn with `pbr.slang`. A template shader for students is added, as blank as
    possible (working name `shaders/template.slang`; the engine does not load it, and it is first usable with step 4).
-3. `todo`, Rule 3 plus Rule 2, and Rule 1 for the component, the merged light list and the `scaleIBLAmbient` line:
+3. `in progress` since 2026-09-21: the shader is swapped and trimmed and the `scaleIBLAmbient` line is in, both
+   built (log in `docs/DELETIONS.md`). `LightComponent`, the appended entity lights and the "Sun" of the example
+   scene are proposed and wait for the owner's approval (Rule 1); until they exist the Viking room shows only its
+   10 % ambient light. The owner's run is pending.
+   Rule 3 plus Rule 2, and Rule 1 for the component, the merged light list and the `scaleIBLAmbient` line:
    real lighting. `pbr.slang` is replaced by the tutorial's `pbr_full.slang`, trimmed by deletion. The owner's rule
    for the trimming: keep what the rasterization pipeline uses, drop what belongs to a removed rendering option or
    needs ray tracing; the result is the table below. It is the shader the tutorial itself loaded as `pbr.slang` until
@@ -100,9 +104,12 @@ binding 0 and the material push constants, which is exactly the PBR layout the e
   `pipeline.*`, went on 2026-09-21 as planned change 1.
 - Remove the CPack / install section at the end of `CMakeLists.txt`. Rule 2.
 - Slim `UniformBufferObject` (C++ and `common_types.slang`): `padding1`, `padding2`, `slicesZ`, the reflection fields
-  and the ray-query fields are never written since 2026-09-21. Rule 2 on both sides; it changes `pbr.spv` and
-  `texturedMesh.spv`, which are byte-identical to the tutorial today. Worth it for the use case: the UBO is the first
-  thing a student reads when writing a shader.
+  and the ray-query fields are never written since 2026-09-21, and since planned change 3 no shader reads them.
+  Rule 2 on both sides. The old argument against it is gone: it would have changed `pbr.spv` and `texturedMesh.spv`,
+  which were byte-identical to the tutorial then; `texturedMesh.spv` was deleted with planned change 2 and `pbr.spv`
+  differs from the tutorial since planned change 3. It would still change `composite.spv` if the slang compiler
+  emits the struct differently (to be checked). Worth it for the use case: the UBO is the first thing a student
+  reads when writing a shader.
 - Drop `eShaderDeviceAddress` from the vertex / index buffers (only ray tracing needed the addresses) and the required
   `bufferDeviceAddress` feature. Rule 2, but it moves every mesh buffer from the dedicated-block branch of
   `MemoryPool::createBuffer()` to the pooled branch, so it needs a test with a large scene first.
@@ -112,7 +119,8 @@ binding 0 and the material push constants, which is exactly the PBR layout the e
   direction, diffuse only, `scaleIBLAmbient` never set). Decided on 2026-09-21: the toggle and the basic path go
   (planned change 2), and `pbr.slang` becomes what its name says (planned change 3).
 - Let a raster shader read the scene lights (PBR binding 6 is uploaded every frame and unread). Decided on
-  2026-09-21: planned change 3, with the tutorial's own shader (Rule 3 plus Rule 2) instead of new code.
+  2026-09-21: planned change 3, with the tutorial's own shader (Rule 3 plus Rule 2) instead of new code. Done on
+  2026-09-21: `pbr.slang` reads binding 6.
 - "Sampler max anisotropy" recreates the samplers without rewriting the descriptor sets that reference the old ones
   (tutorial behaviour). A fix is new code: Rule 1. Removing the slider is Rule 2.
 - Remove the loading watchdog thread. Rule 2. `watchdogSuppressed` is always false since the AS builds are gone.
