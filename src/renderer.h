@@ -850,8 +850,6 @@ class Renderer {
     vk::RenderingAttachmentInfo depthAttachment;
 
     // Pipelines
-    vk::raii::PipelineLayout pipelineLayout = nullptr;
-    vk::raii::Pipeline graphicsPipeline = nullptr;
     vk::raii::PipelineLayout pbrPipelineLayout = nullptr;
     vk::raii::Pipeline pbrGraphicsPipeline = nullptr;
     vk::raii::Pipeline pbrBlendGraphicsPipeline = nullptr;
@@ -936,7 +934,6 @@ class Renderer {
     void ProcessPendingEntityPreallocations();
 
     // Descriptor set layouts (declared before pools and sets)
-    vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
     vk::raii::DescriptorSetLayout pbrDescriptorSetLayout = nullptr;
     vk::raii::DescriptorSetLayout transparentDescriptorSetLayout = nullptr;
     vk::raii::PipelineLayout pbrTransparentPipelineLayout = nullptr;
@@ -1098,7 +1095,6 @@ class Renderer {
       std::vector<vk::raii::Buffer> uniformBuffers;
       std::vector<std::unique_ptr<MemoryPool::Allocation>> uniformBufferAllocations;
       std::vector<void *> uniformBuffersMapped;
-      std::vector<vk::raii::DescriptorSet> basicDescriptorSets; // For basic pipeline
       std::vector<vk::raii::DescriptorSet> pbrDescriptorSets; // For PBR pipeline
 
       // Instance buffer for instanced rendering
@@ -1111,14 +1107,12 @@ class Renderer {
       // but not necessarily initialized immediately (to avoid update-after-bind hazards),
       // so each frame needs a one-time initialization at its safe point.
       std::vector<bool> pbrUboBindingWritten; // size = MAX_FRAMES_IN_FLIGHT
-      std::vector<bool> basicUboBindingWritten; // size = MAX_FRAMES_IN_FLIGHT
 
       // Tracks whether image bindings have been written at least once for each frame.
       // If false for the current frame at the safe point, we cold-initialize the
-      // image bindings (PBR: b1..b5 [+b6 when applicable], Basic: b1) with either
+      // image bindings (PBR: b1..b5 [+b6 when applicable]) with either
       // real textures or shared defaults to avoid per-frame "black" flashes.
       std::vector<bool> pbrImagesWritten; // size = MAX_FRAMES_IN_FLIGHT
-      std::vector<bool> basicImagesWritten; // size = MAX_FRAMES_IN_FLIGHT
 
       // Cached material lookup/classification for raster rendering.
       // Avoids per-frame string parsing of entity names ("_Material_") and repeated
@@ -1260,9 +1254,7 @@ class Renderer {
     bool createSwapChain();
     bool createImageViews();
     bool setupDynamicRendering();
-    bool createDescriptorSetLayout();
     bool createPBRDescriptorSetLayout();
-    bool createGraphicsPipeline();
 
     bool createPBRPipeline();
 

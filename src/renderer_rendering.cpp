@@ -365,11 +365,9 @@ void Renderer::cleanupSwapChain() {
   // descriptorPool is preserved; it will be managed during full renderer teardown.
 
   // Clean up pipelines
-  graphicsPipeline = vk::raii::Pipeline(nullptr);
   pbrGraphicsPipeline = vk::raii::Pipeline(nullptr);
 
   // Clean up pipeline layouts
-  pipelineLayout = vk::raii::PipelineLayout(nullptr);
   pbrPipelineLayout = vk::raii::PipelineLayout(nullptr);
 
   // Clean up sync objects (they need to be recreated with new swap chain image count)
@@ -442,18 +440,14 @@ void Renderer::recreateSwapChain() {
     std::lock_guard<std::mutex> lk(descriptorMutex);
     for (auto& kv : entityResources) {
       auto& resources = kv.second;
-      resources.basicDescriptorSets.clear();
       resources.pbrDescriptorSets.clear();
       // Descriptor initialization flags must be reset because new descriptor sets
       // will be allocated and only the current frame will be initialized at runtime.
       resources.pbrUboBindingWritten.assign(MAX_FRAMES_IN_FLIGHT, false);
-      resources.basicUboBindingWritten.assign(MAX_FRAMES_IN_FLIGHT, false);
       resources.pbrImagesWritten.assign(MAX_FRAMES_IN_FLIGHT, false);
-      resources.basicImagesWritten.assign(MAX_FRAMES_IN_FLIGHT, false);
     }
   }
 
-  createGraphicsPipeline();
   createPBRPipeline();
   createCompositePipeline();
 
@@ -472,15 +466,13 @@ void Renderer::recreateSwapChain() {
       continue;
 
     std::string texturePath = meshComponent->GetTexturePath();
-    // Fallback for basic pipeline: use baseColor when legacy path is empty
+    // Fallback: use baseColor when legacy path is empty
     if (texturePath.empty()) {
       const std::string& baseColor = meshComponent->GetBaseColorTexturePath();
       if (!baseColor.empty()) {
         texturePath = baseColor;
       }
     }
-    // Recreate basic descriptor sets (ignore failures here to avoid breaking resize)
-    createDescriptorSets(entity, texturePath, false);
     // Recreate PBR descriptor sets
     createDescriptorSets(entity, texturePath, true);
   }
@@ -790,36 +782,28 @@ void Renderer::Render(const std::vector<Entity *>& entities, CameraComponent* ca
       ensureEntityMaterialCache(entity, entityRes);
 
       // --- Per-frame Descriptor Cold-Init (Integrated) ---
-      if (entityRes.basicDescriptorSets.empty() || entityRes.pbrDescriptorSets.empty()) {
+      if (entityRes.pbrDescriptorSets.empty()) {
         std::string texPath = meshComponent->GetBaseColorTexturePath();
         if (texPath.empty()) texPath = meshComponent->GetTexturePath();
-        if (entityRes.basicDescriptorSets.empty()) createDescriptorSets(entity, entityRes, texPath, false);
         if (entityRes.pbrDescriptorSets.empty()) createDescriptorSets(entity, entityRes, texPath, true);
       }
 
       // Initialize binding 0 (UBO) for the current frame slot if not already done.
-      if (!entityRes.pbrUboBindingWritten[currentFrame] || !entityRes.basicUboBindingWritten[currentFrame]) {
+      if (!entityRes.pbrUboBindingWritten[currentFrame]) {
         std::string texPath = meshComponent->GetBaseColorTexturePath();
         if (texPath.empty()) texPath = meshComponent->GetTexturePath();
         if (!entityRes.pbrUboBindingWritten[currentFrame]) {
           updateDescriptorSetsForFrame(entity, entityRes, texPath, true, currentFrame, false, true);
         }
-        if (!entityRes.basicUboBindingWritten[currentFrame]) {
-          updateDescriptorSetsForFrame(entity, entityRes, texPath, false, currentFrame, false, true);
-        }
       }
 
       // Initialize images for the current frame slot if not already done.
-      if (!entityRes.pbrImagesWritten[currentFrame] || !entityRes.basicImagesWritten[currentFrame]) {
+      if (!entityRes.pbrImagesWritten[currentFrame]) {
         std::string texPath = meshComponent->GetBaseColorTexturePath();
         if (texPath.empty()) texPath = meshComponent->GetTexturePath();
         if (!entityRes.pbrImagesWritten[currentFrame]) {
           updateDescriptorSetsForFrame(entity, entityRes, texPath, true, currentFrame, true, false);
           entityRes.pbrImagesWritten[currentFrame] = true;
-        }
-        if (!entityRes.basicImagesWritten[currentFrame]) {
-          updateDescriptorSetsForFrame(entity, entityRes, texPath, false, currentFrame, true, false);
-          entityRes.basicImagesWritten[currentFrame] = true;
         }
       }
 
@@ -1075,28 +1059,7 @@ void Renderer::Render(const std::vector<Entity *>& entities, CameraComponent* ca
   // Hide UI during loading; the progress overlay is handled by ImGuiSystem::NewFrame().
   if (imguiSystem && !imguiSystem->IsFrameRendered() && !IsLoading()) {
     if (ImGui::Begin("Renderer")) {
-      // === RASTERIZATION-SPECIFIC OPTIONS ===
-      {
-        ImGui::Text("Rasterization Options:");
-
-        // Lighting Controls - BRDF/PBR is now the default lighting model
-        bool useBasicLighting = imguiSystem && !imguiSystem->IsPBREnabled();
-        if (ImGui::Checkbox("Use Basic Lighting (Phong)", &useBasicLighting)) {
-          imguiSystem->SetPBREnabled(!useBasicLighting);
-          std::cout << "Lighting mode: " << (!useBasicLighting ? "BRDF/PBR (default)" : "Basic Phong") << std::endl;
-        }
-
-        if (!useBasicLighting) {
-          ImGui::Text("Status: BRDF/PBR pipeline active (default)");
-          ImGui::Text("All models rendered with physically-based lighting");
-        } else {
-          ImGui::Text("Status: Basic Phong pipeline active");
-          ImGui::Text("All models rendered with basic Phong shading");
-        }
-      }
-
       // === SHARED OPTIONS ===
-      ImGui::Separator();
       ImGui::Text("Culling & LOD:");
       if (ImGui::Checkbox("Frustum culling", &enableFrustumCulling)) {
         // no-op, takes effect immediately
@@ -1205,13 +1168,9 @@ void Renderer::Render(const std::vector<Entity *>& entities, CameraComponent* ca
     commandBuffers[currentFrame].setScissor(0, scissor); {
       uint32_t opaqueDrawsThisPass = 0;
       for (const auto& job : opaqueJobs) {
-        bool useBasic = (imguiSystem && !imguiSystem->IsPBREnabled());
         vk::raii::Pipeline* selectedPipeline = nullptr;
         vk::raii::PipelineLayout* selectedLayout = nullptr;
-        if (useBasic) {
-          selectedPipeline = &graphicsPipeline;
-          selectedLayout = &pipelineLayout;
-        } else {
+        {
           selectedPipeline = &pbrGraphicsPipeline; // writes depth, compare Less
           selectedLayout = &pbrPipelineLayout;
         }
@@ -1226,19 +1185,12 @@ void Renderer::Render(const std::vector<Entity *>& entities, CameraComponent* ca
         commandBuffers[currentFrame].bindVertexBuffers(0, buffers, offsets);
         commandBuffers[currentFrame].bindIndexBuffer(*job.meshRes->indexBuffer, 0, vk::IndexType::eUint32);
 
-        auto* descSetsPtr = useBasic ? &job.entityRes->basicDescriptorSets : &job.entityRes->pbrDescriptorSets;
+        auto* descSetsPtr = &job.entityRes->pbrDescriptorSets;
         if (descSetsPtr->empty() || currentFrame >= descSetsPtr->size()) {
           continue;
         }
 
-        if (useBasic) {
-          commandBuffers[currentFrame].bindDescriptorSets(
-            vk::PipelineBindPoint::eGraphics,
-            **selectedLayout,
-            0,
-            {*(*descSetsPtr)[currentFrame]},
-            {});
-        } else {
+        {
           vk::DescriptorSet set1Opaque = (transparentDescriptorSets.empty() || IsLoading())
                                            ? *transparentFallbackDescriptorSets[currentFrame]
                                            : *transparentDescriptorSets[currentFrame];

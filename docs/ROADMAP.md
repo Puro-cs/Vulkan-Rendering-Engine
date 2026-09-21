@@ -10,16 +10,16 @@ It got developed in the scope of the bachelore theosis of Paulo Hoheisel.
 
 ## Planned changes
 
-The owner approved this order on 2026-09-21 and said not to start implementing yet. The target is the
-student-facing interface at the end of this file. Logging, builds and runs follow `docs/WORKFLOW.md`. Steps 1 and 2
-only delete code (step 2 also adds the template shader); step 3 swaps a shader and adds the light component; the
-student-facing interface starts with step 4. The sub-steps, the code each step touches and its checks are in
-`docs/IMPLEMENTATION_PLAN.md`.
+The owner approved this order on 2026-09-21. Implementation started the same day: the owner names a step, and only
+that step is implemented. The target is the student-facing interface at the end of this file. Logging, builds and
+runs follow `docs/WORKFLOW.md`. Steps 1 and 2 only delete code (step 2 also adds the template shader); step 3 swaps a
+shader and adds the light component; the student-facing interface starts with step 4. The sub-steps, the code each
+step touches and its checks are in `docs/IMPLEMENTATION_PLAN.md`. Step 1 is done and listed under "Done"; the
+remaining steps keep their numbers, because this file and the plan refer to them by number.
 
-1. `todo`, Rule 2: delete the dead `Pipeline` class (`pipeline.h/.cpp` and its CMake entry). Its name collides with
-   the pipelines of step 4, and it is the only other code that names `texturedMesh.spv`. Whether the other three dead
-   files of the candidates list go in the same step is not decided.
-2. `todo`, Rule 2, and Rule 1 for the template: remove the "Use Basic Lighting (Phong)" option. That is the checkbox
+2. `in progress` since 2026-09-21: the deletion part is done and built (log in `docs/DELETIONS.md`); the template
+   shader is proposed and waits for the owner's approval (Rule 1), and the owner's run is pending.
+   Rule 2, and Rule 1 for the template: remove the "Use Basic Lighting (Phong)" option. That is the checkbox
    with its status lines, `pbrEnabled` / `IsPBREnabled()` / `SetPBREnabled()` in `ImGuiSystem`, the `useBasic`
    branches of the draw loop, `createGraphicsPipeline()` with `graphicsPipeline` and `pipelineLayout`, the basic
    descriptor set layout and the per-entity basic descriptor sets with their flags. `texturedMesh.slang` is deleted
@@ -88,12 +88,16 @@ binding 0 and the material push constants, which is exactly the PBR layout the e
   (4) Forward+: the checkbox, `renderer_compute.cpp`, `forward_plus_cull.slang`, the depth pre-pass, PBR bindings 7 to 9.
   The PBR set layout is now bindings 0 to 6; the compiled shaders are byte-identical to the tutorial's. Kept items and
   forced edits: `docs/DELETIONS.md`.
+- 2026-09-21, `done`, Rule 2, planned change 1: deleted the dead `Pipeline` class (`pipeline.h/.cpp` and its entry in
+  `CMakeLists.txt`). Its name collided with the pipelines of step 4, and it was the only other code that names
+  `texturedMesh.spv`. No forced edit; Debug build with 0 errors. The other three dead files of the candidates list
+  were not part of the step and are still undecided.
 
 ## Candidates already visible in the code (not decided)
 
-- Remove the four compiled-but-unreferenced files: `pipeline.*`, `descriptor_manager.*`, `renderdoc_debug_system.*`,
-  `resource_manager.*` (the last is owned by Engine but never called). Rule 2. `pipeline.*` is planned change 1; the
-  other three are still undecided.
+- Remove the three compiled-but-unreferenced files that are left: `descriptor_manager.*`, `renderdoc_debug_system.*`,
+  `resource_manager.*` (the last is owned by Engine but never called). Rule 2. Still undecided. The fourth one,
+  `pipeline.*`, went on 2026-09-21 as planned change 1.
 - Remove the CPack / install section at the end of `CMakeLists.txt`. Rule 2.
 - Slim `UniformBufferObject` (C++ and `common_types.slang`): `padding1`, `padding2`, `slicesZ`, the reflection fields
   and the ray-query fields are never written since 2026-09-21. Rule 2 on both sides; it changes `pbr.spv` and
@@ -159,8 +163,8 @@ is open. The names of calls and files (`IsRunning`, `AddToPipeline`, `CreateSphe
   shading is something the students implement themselves. The deletion covers the checkbox with its status lines,
   `pbrEnabled` in `ImGuiSystem`, the `useBasic` branches of the draw loop, `createGraphicsPipeline()` with its
   pipeline and layout, the basic descriptor set layout with the per-entity basic descriptor sets, and
-  `texturedMesh.slang`, which is deleted completely (nothing else loads it, apart from the dead `Pipeline` class).
-  By default every object is drawn with `pbr.slang`.
+  `texturedMesh.slang`, which is deleted completely (nothing else loads it; the dead `Pipeline` class, which also
+  named it, went with planned change 1). By default every object is drawn with `pbr.slang`.
 - A template shader is the starting point for own shaders: the most neutral shader for both stages, as blank as
   possible. The vertex shader leaves the geometry as it is and only does the conversion no vertex shader can skip,
   from the model's own coordinates to clip space (instance, model, view and projection matrix), and hands on the UV.

@@ -215,22 +215,6 @@ bool Renderer::Initialize(const std::string& appName, bool enableValidationLayer
   }
   LOGI("Dynamic rendering setup successfully");
 
-  // Create the descriptor set layout
-  LOGI("Creating descriptor set layout...");
-  if (!createDescriptorSetLayout()) {
-    LOGE("Failed to create descriptor set layout");
-    return false;
-  }
-  LOGI("Descriptor set layout created successfully");
-
-  // Create the graphics pipeline
-  LOGI("Creating graphics pipeline...");
-  if (!createGraphicsPipeline()) {
-    LOGE("Failed to create graphics pipeline");
-    return false;
-  }
-  LOGI("Graphics pipeline created successfully");
-
   // Create PBR pipeline
   LOGI("Creating PBR pipeline...");
   if (!createPBRPipeline()) {
@@ -406,7 +390,6 @@ void Renderer::Cleanup() {
   // 2) Clear per-entity resources (descriptor sets and buffers) while descriptor pools still exist
   for (auto& kv : entityResources) {
     auto& resources = kv.second;
-    resources.basicDescriptorSets.clear();
     resources.pbrDescriptorSets.clear();
     resources.uniformBuffers.clear();
     resources.uniformBufferAllocations.clear();
@@ -423,20 +406,17 @@ void Renderer::Cleanup() {
   compositeDescriptorSets.clear();
 
   // 4) Destroy/Reset pipelines and pipeline layouts
-  graphicsPipeline = nullptr;
   pbrGraphicsPipeline = nullptr;
   pbrBlendGraphicsPipeline = nullptr;
   pbrPremulBlendGraphicsPipeline = nullptr;
   glassGraphicsPipeline = nullptr;
   compositePipeline = nullptr;
 
-  pipelineLayout = nullptr;
   pbrPipelineLayout = nullptr;
   compositePipelineLayout = nullptr;
   pbrTransparentPipelineLayout = nullptr;
 
   // 5) Destroy descriptor set layouts and pools
-  descriptorSetLayout = nullptr;
   pbrDescriptorSetLayout = nullptr;
   transparentDescriptorSetLayout = nullptr;
   compositeDescriptorSetLayout = nullptr;

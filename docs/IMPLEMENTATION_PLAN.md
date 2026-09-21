@@ -2,8 +2,8 @@
 
 The sub-steps behind the ten planned changes of `docs/ROADMAP.md`. The roadmap says what was decided and why; this
 file says how each step is carried out, which code it touches and how it is checked. Written on 2026-09-21 from the
-code as it is today; line numbers are hints and will drift. Nothing of this is implemented, and no step starts
-before the owner says so. Sizes (S, M, L) are estimates.
+code as it is today; line numbers are hints and will drift. No step starts before the owner says so; a finished step
+carries a "Status" line. Sizes (S, M, L) are estimates.
 
 ## Routine of every step
 
@@ -31,6 +31,10 @@ before the owner says so. Sizes (S, M, L) are estimates.
    `resource_manager.*`.
 
 Check: the build passes; the run is unchanged.
+
+Status: done on 2026-09-21. Both files and the CMake line are deleted, no forced edit. Debug build with 0 errors; the
+regenerated project no longer lists `pipeline.cpp`. The owner's run is pending. Sub-step 3 was not decided, the three
+files stay. Log: `docs/DELETIONS.md`.
 
 ## Step 2: remove the Phong option, delete `texturedMesh.slang`, add the template (Rule 2, Rule 1 for the template, M)
 
@@ -63,6 +67,15 @@ Check: the panel shows "Culling & LOD" and "Tone Mapping & Tuning" only; the roo
 still byte-identical to before (no shader source changed). Docs: the shader table and the table "What a mesh shader
 gets from the engine" in `ARCHITECTURE.md` lose the basic column; `BUILD.md` loses the panel group and the known issue
 about two mesh shaders; `REQUIREMENTS.md` mentions the toggle in `einfache_pipeline` and `tr:szenenmanagement`.
+
+Status: sub-steps 1 to 7 done on 2026-09-21. Six code files changed by deletion (395 lines deleted, 10 code lines and
+4 comments changed as forced edits, all listed in `docs/DELETIONS.md`), `texturedMesh.slang` and both `.spv` copies
+deleted, configure re-run, Debug build with 0 errors, `pbr.spv` / `composite.spv` / `imgui.spv` byte-identical to
+before. Beyond the plan, because only the basic branches read them: `resolvedTexturePath` in `createDescriptorSets()`
+and `newlyAllocated` in `updateDescriptorSetsForFrame()` went too, as did the three
+`updateDescriptorSetsForFrame(..., false, ...)` calls (the plan only named the four `createDescriptorSets(..., false)`
+calls). Kept: the `usePBR` and `texturePath` parameters. Sub-step 8 (template) is proposed in the chat and waits for
+the owner's approval; the owner's run is pending. Docs are updated as listed above.
 
 ## Step 3: real lighting (Rule 3 plus Rule 2, Rule 1 for three additions, M to L)
 

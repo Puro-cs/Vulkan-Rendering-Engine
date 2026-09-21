@@ -3,9 +3,10 @@
 The port is the Vulkan-Tutorial "simple engine" (Holochip / Khronos, Apache-2.0) reduced to a Windows-only rendering
 study system. Removed: physics, audio, Android / direct-to-display / Linux / macOS paths, glTF animation, the
 opacity-micromap course, unused shaders, everything ray query (2026-09-20 the render mode, 2026-09-21 the acceleration
-structures and the raster shadow option), Forward+ with its depth pre-pass, and planar reflections. What is left is
-one forward rasterization path. Details in `docs/DELETIONS.md`; the file-by-file comparison with the tutorial is
-`src/source-file-difference.md`.
+structures and the raster shadow option), Forward+ with its depth pre-pass, planar reflections, the dead
+standalone `Pipeline` class (`pipeline.h/.cpp`), and the basic lighting path with `texturedMesh.slang`. What is left
+is one forward rasterization path with one mesh shader, `pbr.slang`. Details in `docs/DELETIONS.md`; the file-by-file
+comparison with the tutorial is `src/source-file-difference.md`.
 
 Intended use (owner, 2026-09-21): students who have never worked with Vulkan write their own simple shaders and
 learn the basics of Vulkan and computer graphics. That is why the renderer was cut down to the parts a first shader
@@ -50,7 +51,7 @@ are drained on the render thread (`ProcessPendingMeshUploads`, `ProcessPendingEn
 | `platform.h/.cpp` | `Platform` interface + `DesktopPlatform` (GLFW) | yes |
 | `renderer.h` | the whole `Renderer` class declaration, UBO / push-constant structs, `LoadingPhase` | yes |
 | `renderer_core.cpp` | instance, debug messenger, device and feature selection, swap chain, sync objects, command pools | yes |
-| `renderer_pipelines.cpp` | descriptor set layouts and graphics pipelines: textured mesh, PBR (opaque, blended, premultiplied, glass), composite | yes |
+| `renderer_pipelines.cpp` | descriptor set layouts and graphics pipelines: PBR (opaque, blended, glass; a premultiplied-alpha variant is declared in `renderer.h` but never created, as in the tutorial) and composite | yes |
 | `renderer_resources.cpp` | buffers, images, textures (KTX2 via libktx), mipmaps, per-entity resources, streaming queues | yes |
 | `renderer_rendering.cpp` | `Renderer::Render()` frame function (see below), light extraction, culling, the "Renderer" ImGui panel | yes |
 | `renderer_utils.cpp` | shader module loading, memory type lookup, layout transitions, copy helpers | yes |
@@ -66,36 +67,39 @@ are drained on the render thread (`ProcessPendingMeshUploads`, `ProcessPendingEn
 | `crash_reporter.h` | minidump writer (Dbghelp) | yes |
 | `debug_system.h` | `DebugSystem` base, `LogLevel`, `LOGI` macros | yes (macros) |
 | `resource_manager.h/.cpp` | `ResourceManager`, `ResourceHandle` | compiled, owned by Engine, never called |
-| `pipeline.h/.cpp` | standalone `Pipeline` class | compiled, not referenced (Renderer builds its own pipelines) |
 | `descriptor_manager.h/.cpp` | standalone `DescriptorManager` | compiled, not referenced |
 | `renderdoc_debug_system.h/.cpp` | RenderDoc capture hooks | compiled, not referenced |
 | `vulkan_compatibility.h`, `vulkan_dispatch.cpp` | SDK version shims, `VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE` | yes |
 
-The four "compiled, not referenced" rows are dead code kept from the tutorial. Removing them is a Rule 2 deletion.
+The three "compiled, not referenced" rows are dead code kept from the tutorial. Removing them is a Rule 2 deletion.
+A fourth one, the standalone `Pipeline` class (`pipeline.h/.cpp`), was deleted on 2026-09-21 (planned change 1).
 
 ## Shaders (`src/shaders/`)
 
 | Shader | Stage | Used by |
 |---|---|---|
-| `texturedMesh.slang` | vert + frag | "basic" path: base colour texture, diffuse light from the fixed direction (1, 1, 1) plus 10 % ambient. No specular term, so not Phong despite the panel label |
-| `pbr.slang` | vert + frag | "PBR" path: base colour x `baseColorFactor` x (1 - metallic), alpha-mask `discard`, the same fixed-direction diffuse light, ambient multiplied by `scaleIBLAmbient` (never set by C++, so 0). `GlassPSMain` blends the off-screen scene colour for glass. No BRDF |
+| `pbr.slang` | vert + frag | every mesh: base colour x `baseColorFactor` x (1 - metallic), alpha-mask `discard`, diffuse light from the fixed direction (1, 1, 1), ambient multiplied by `scaleIBLAmbient` (never set by C++, so 0). `GlassPSMain` blends the off-screen scene colour for glass. No BRDF yet (planned change 3) |
 | `composite.slang` | vert + frag | fullscreen pass that draws the off-screen opaque colour to the swap chain (exposure, filmic tone map; gamma only on a non-sRGB swap chain) before the transparent pass |
 | `imgui.slang` | vert + frag | ImGuiSystem |
 | `common_types`, `pbr_utils`, `lighting_utils`, `tonemapping_utils` | modules | imported by the above, not compiled standalone |
 
+The second mesh shader, `texturedMesh.slang` (the "basic" path behind the panel option "Use Basic Lighting (Phong)"),
+was deleted on 2026-09-21 with its pipeline, descriptor set layout and per-entity descriptor sets (planned change 2).
+
 ## What a mesh shader gets from the engine
 
-Since 2026-09-21 these are the complete inputs, which is what a student has to know to write a shader:
+Since 2026-09-21 these are the complete inputs, which is what a student has to know to write a shader. There is one
+mesh layout, the PBR one; the pipelines of planned change 4 will use it too:
 
-| Input | `texturedMesh.slang` (basic) | `pbr.slang` (PBR) |
-|---|---|---|
-| Vertex attributes | locations 0 to 3: position, normal, UV, tangent; 4 to 7: per-instance model matrix; 8 to 10: per-instance normal matrix | same |
-| Set 0, binding 0 | `UniformBufferObject` (model, view, proj, camPos, exposure, lightCount, screenDimensions, ...) | same |
-| Set 0, binding 1 | base colour texture | base colour texture |
-| Set 0, bindings 2 to 5 | not in the layout | metallic-roughness, normal, occlusion, emissive textures |
-| Set 0, binding 6 | not in the layout | storage buffer of `LightData` (scene lights, count in `ubo.lightCount`), fragment stage. In the C++ layout, but `pbr.slang` does not declare or read it yet |
-| Set 1, binding 0 | not in the layout | off-screen opaque scene colour (used by `GlassPSMain`) |
-| Push constants | none | `PushConstants` (material factors), fragment stage |
+| Input | Content |
+|---|---|
+| Vertex attributes | locations 0 to 3: position, normal, UV, tangent; 4 to 7: per-instance model matrix; 8 to 10: per-instance normal matrix |
+| Set 0, binding 0 | `UniformBufferObject` (model, view, proj, camPos, exposure, lightCount, screenDimensions, ...) |
+| Set 0, binding 1 | base colour texture |
+| Set 0, bindings 2 to 5 | metallic-roughness, normal, occlusion, emissive textures |
+| Set 0, binding 6 | storage buffer of `LightData` (scene lights, count in `ubo.lightCount`), fragment stage. In the C++ layout, but `pbr.slang` does not declare or read it yet |
+| Set 1, binding 0 | off-screen opaque scene colour (used by `GlassPSMain`) |
+| Push constants | `PushConstants` (material factors), fragment stage |
 
 `UniformBufferObject` still carries fields of removed features (`padding1`, `padding2`, `slicesZ`, reflection and
 ray-query fields). They are never written and are kept only so that the compiled shaders stay byte-identical to the
@@ -110,7 +114,7 @@ tutorial's; see `docs/DELETIONS.md`.
 5. Preparation pass: collect active entities with GPU resources, per-frame descriptor cold-init, frustum culling, distance LOD; sort into opaque and transparent jobs.
 6. `acquireNextImage`; out-of-date / suboptimal recreates the swap chain and returns.
 7. Grow the light storage buffer if needed, begin the command buffer, process pending texture uploads, draw the "Renderer" panel.
-8. Pass 1: clear colour and depth, draw the opaque entities with `texturedMesh` (basic) or `pbr` into the off-screen colour image.
+8. Pass 1: clear colour and depth, draw the opaque entities with `pbr` into the off-screen colour image.
 9. Pass 1b: `composite` draws that image to the swap chain (exposure, tone map).
 10. Pass 2: draw the transparent entities, sorted back to front, onto the swap chain with the blended PBR or the glass pipeline; glass samples the off-screen colour.
 11. `imguiSystem->Render()` in its own dynamic-rendering pass on top.

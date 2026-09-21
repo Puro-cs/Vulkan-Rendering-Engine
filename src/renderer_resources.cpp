@@ -1108,9 +1108,7 @@ bool Renderer::createUniformBuffers(Entity* entity) {
 
     // Initialize descriptor initialization tracking flags to MAX_FRAMES_IN_FLIGHT
     resources.pbrUboBindingWritten.assign(MAX_FRAMES_IN_FLIGHT, false);
-    resources.basicUboBindingWritten.assign(MAX_FRAMES_IN_FLIGHT, false);
     resources.pbrImagesWritten.assign(MAX_FRAMES_IN_FLIGHT, false);
-    resources.basicImagesWritten.assign(MAX_FRAMES_IN_FLIGHT, false);
 
     // Create instance buffer for all entities (shaders always expect instance data)
     auto* meshComponent = entity->GetComponent<MeshComponent>();
@@ -1229,14 +1227,12 @@ bool Renderer::createDescriptorSets(Entity* entity, EntityResources& res, const 
     lastFrameUpdateTime.store(std::chrono::steady_clock::now(), std::memory_order_relaxed);
   }
 
-  // Resolve alias before taking the shared lock to avoid nested shared_lock on the same mutex
-  const std::string resolvedTexturePath = ResolveTextureId(texturePath);
   try {
-    vk::DescriptorSetLayout selectedLayout = usePBR ? *pbrDescriptorSetLayout : *descriptorSetLayout;
+    vk::DescriptorSetLayout selectedLayout = *pbrDescriptorSetLayout;
     std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, selectedLayout);
     vk::DescriptorSetAllocateInfo allocInfo{.descriptorPool = *descriptorPool, .descriptorSetCount = MAX_FRAMES_IN_FLIGHT, .pSetLayouts = layouts.data()};
 
-    auto& targetDescriptorSets = usePBR ? res.pbrDescriptorSets : res.basicDescriptorSets;
+    auto& targetDescriptorSets = res.pbrDescriptorSets;
     if (targetDescriptorSets.empty()) {
       std::lock_guard<std::mutex> lk(descriptorMutex);
       // Allocate into a temporary owning container, then move the individual RAII sets into our vector.
@@ -1314,25 +1310,6 @@ bool Renderer::createDescriptorSets(Entity* entity, EntityResources& res, const 
           std::lock_guard<std::mutex> lk(descriptorMutex);
           device.updateDescriptorSets(descriptorWrites, {});
         }
-      } else {
-        // Basic Pipeline
-        // ... (this part remains the same)
-        vk::Sampler samplerHandle{};
-        vk::ImageView viewHandle{}; {
-          std::shared_lock<std::shared_mutex> lock(textureResourcesMutex);
-          auto textureIt = textureResources.find(resolvedTexturePath);
-          TextureResources* texRes = (textureIt != textureResources.end()) ? &textureIt->second : &defaultTextureResources;
-          samplerHandle = *texRes->textureSampler;
-          viewHandle = *texRes->textureImageView;
-        }
-        vk::DescriptorImageInfo imageInfo{.sampler = samplerHandle, .imageView = viewHandle, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
-        std::array<vk::WriteDescriptorSet, 2> descriptorWrites = {
-          vk::WriteDescriptorSet{.dstSet = *targetDescriptorSets[i], .dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eUniformBuffer, .pBufferInfo = &bufferInfo},
-          vk::WriteDescriptorSet{.dstSet = *targetDescriptorSets[i], .dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfo}
-        }; {
-          std::lock_guard<std::mutex> lk(descriptorMutex);
-          device.updateDescriptorSets(descriptorWrites, {});
-        }
       }
     }
     return true;
@@ -1372,13 +1349,11 @@ bool Renderer::preAllocateEntityResources(Entity* entity) {
       auto it = entityResources.find(entity);
       if (it != entityResources.end()) {
         it->second.pbrUboBindingWritten.assign(MAX_FRAMES_IN_FLIGHT, false);
-        it->second.basicUboBindingWritten.assign(MAX_FRAMES_IN_FLIGHT, false);
         it->second.pbrImagesWritten.assign(MAX_FRAMES_IN_FLIGHT, false);
-        it->second.basicImagesWritten.assign(MAX_FRAMES_IN_FLIGHT, false);
       }
     }
 
-    // 3. Pre-allocate BOTH basic and PBR descriptor sets
+    // 3. Pre-allocate PBR descriptor sets
     std::string texturePath = meshComponent->GetTexturePath();
     // Fallback: if legacy texturePath is empty, use PBR baseColor texture
     if (texturePath.empty()) {
@@ -1386,12 +1361,6 @@ bool Renderer::preAllocateEntityResources(Entity* entity) {
       if (!baseColor.empty()) {
         texturePath = baseColor;
       }
-    }
-
-    // Create basic descriptor sets
-    if (!createDescriptorSets(entity, texturePath, false)) {
-      std::cerr << "Failed to create basic descriptor sets for entity: " << entity->GetName() << std::endl;
-      return false;
     }
 
     // Create PBR descriptor sets
@@ -1507,13 +1476,6 @@ bool Renderer::preAllocateEntityResourcesBatch(const std::vector<Entity *>& enti
         if (!baseColor.empty()) {
           texturePath = baseColor;
         }
-      }
-
-      watchdogProgressLabel.store("Batch: createDescriptorSets (basic)", std::memory_order_relaxed);
-      if (!createDescriptorSets(entity, texturePath, false)) {
-        std::cerr << "Failed to create basic descriptor sets for entity (batch): "
-            << entity->GetName() << std::endl;
-        return false;
       }
 
       watchdogProgressLabel.store("Batch: createDescriptorSets (pbr)", std::memory_order_relaxed);
@@ -3017,16 +2979,14 @@ bool Renderer::updateDescriptorSetsForFrame(Entity* entity,
     return false;
   }
 
-  vk::DescriptorSetLayout selectedLayout = usePBR ? *pbrDescriptorSetLayout : *descriptorSetLayout;
+  vk::DescriptorSetLayout selectedLayout = *pbrDescriptorSetLayout;
   // Ensure descriptor sets exist for this entity
   std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, selectedLayout);
   vk::DescriptorSetAllocateInfo allocInfo{.descriptorPool = *descriptorPool, .descriptorSetCount = MAX_FRAMES_IN_FLIGHT, .pSetLayouts = layouts.data()};
-  auto& targetDescriptorSets = usePBR ? res.pbrDescriptorSets : res.basicDescriptorSets;
-  bool newlyAllocated = false;
+  auto& targetDescriptorSets = res.pbrDescriptorSets;
   if (targetDescriptorSets.empty()) {
     std::lock_guard<std::mutex> lk(descriptorMutex);
     targetDescriptorSets = vk::raii::DescriptorSets(device, allocInfo);
-    newlyAllocated = true;
   }
   if (frameIndex >= targetDescriptorSets.size())
     return false;
@@ -3037,14 +2997,8 @@ bool Renderer::updateDescriptorSetsForFrame(Entity* entity,
   if (res.pbrUboBindingWritten.size() != MAX_FRAMES_IN_FLIGHT) {
     res.pbrUboBindingWritten.assign(MAX_FRAMES_IN_FLIGHT, false);
   }
-  if (res.basicUboBindingWritten.size() != MAX_FRAMES_IN_FLIGHT) {
-    res.basicUboBindingWritten.assign(MAX_FRAMES_IN_FLIGHT, false);
-  }
   if (res.pbrImagesWritten.size() != MAX_FRAMES_IN_FLIGHT) {
     res.pbrImagesWritten.assign(MAX_FRAMES_IN_FLIGHT, false);
-  }
-  if (res.basicImagesWritten.size() != MAX_FRAMES_IN_FLIGHT) {
-    res.basicImagesWritten.assign(MAX_FRAMES_IN_FLIGHT, false);
   }
 
   if (usePBR) {
@@ -3111,47 +3065,6 @@ bool Renderer::updateDescriptorSetsForFrame(Entity* entity,
     if (!imagesOnly) {
       res.pbrUboBindingWritten[frameIndex] = true;
     }
-  } else {
-    const std::string resolvedTexturePath = ResolveTextureId(texturePath);
-    vk::Sampler samplerHandle{};
-    vk::ImageView viewHandle{}; {
-      std::shared_lock<std::shared_mutex> lock(textureResourcesMutex);
-      auto textureIt = textureResources.find(resolvedTexturePath);
-      TextureResources* texRes = (textureIt != textureResources.end()) ? &textureIt->second : &defaultTextureResources;
-      samplerHandle = *texRes->textureSampler;
-      viewHandle = *texRes->textureImageView;
-    }
-    vk::DescriptorImageInfo imageInfo{.sampler = samplerHandle, .imageView = viewHandle, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
-    if (imagesOnly && !newlyAllocated) {
-      std::array<vk::WriteDescriptorSet, 1> descriptorWrites = {
-        vk::WriteDescriptorSet{.dstSet = *targetDescriptorSets[frameIndex], .dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfo}
-      }; {
-        std::lock_guard<std::mutex> lk(descriptorMutex);
-        device.updateDescriptorSets(descriptorWrites, {});
-      }
-    } else {
-      // If uboOnly is requested for basic pipeline, only write binding 0
-      if (uboOnly) {
-        if (!res.basicUboBindingWritten[frameIndex]) {
-          std::array<vk::WriteDescriptorSet, 1> descriptorWrites = {
-            vk::WriteDescriptorSet{.dstSet = *targetDescriptorSets[frameIndex], .dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eUniformBuffer, .pBufferInfo = &bufferInfo}
-          }; {
-            std::lock_guard<std::mutex> lk(descriptorMutex);
-            device.updateDescriptorSets(descriptorWrites, {});
-          }
-          res.basicUboBindingWritten[frameIndex] = true;
-        }
-        return true;
-      }
-      std::array<vk::WriteDescriptorSet, 2> descriptorWrites = {
-        vk::WriteDescriptorSet{.dstSet = *targetDescriptorSets[frameIndex], .dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eUniformBuffer, .pBufferInfo = &bufferInfo},
-        vk::WriteDescriptorSet{.dstSet = *targetDescriptorSets[frameIndex], .dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfo}
-      }; {
-        std::lock_guard<std::mutex> lk(descriptorMutex);
-        device.updateDescriptorSets(descriptorWrites, {});
-      }
-      res.basicUboBindingWritten[frameIndex] = true;
-    }
   }
   return true;
 }
@@ -3186,7 +3099,7 @@ void Renderer::ProcessDirtyDescriptorsForFrame(uint32_t frameIndex) {
     auto meshComponent = entity->GetComponent<MeshComponent>();
     if (!meshComponent)
       continue;
-    // Resolve a texture path to pass for the basic pipeline
+    // Resolve a texture path to pass
     std::string basicTexPath = meshComponent->GetTexturePath();
     if (basicTexPath.empty())
       basicTexPath = meshComponent->GetBaseColorTexturePath();
@@ -3195,7 +3108,6 @@ void Renderer::ProcessDirtyDescriptorsForFrame(uint32_t frameIndex) {
     //   Other frames will be updated at their own safe points to avoid UPDATE_AFTER_BIND violations.
     auto entityIt = entityResources.find(entity);
     if (entityIt != entityResources.end()) {
-      updateDescriptorSetsForFrame(entity, entityIt->second, basicTexPath, false, frameIndex, /*imagesOnly=*/true);
       updateDescriptorSetsForFrame(entity, entityIt->second, basicTexPath, true, frameIndex, /*imagesOnly=*/true);
     }
     // Do not touch descriptors for other frames while their command buffers may be pending.

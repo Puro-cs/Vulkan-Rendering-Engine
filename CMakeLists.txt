@@ -148,7 +148,6 @@ set(SOURCES_COMMON
     src/imgui/imgui_tables.cpp
     src/imgui/imgui_widgets.cpp
     src/vulkan_device.cpp
-    src/pipeline.cpp
     src/descriptor_manager.cpp
     src/renderdoc_debug_system.cpp
     src/mikktspace.c

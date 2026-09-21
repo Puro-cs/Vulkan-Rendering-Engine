@@ -48,10 +48,11 @@ cd src && ../build/windows-msvc/Debug/VulkanRenderEngine.exe
 
 Window 800x600, title shows frame count, FPS and ms. Controls: `W A S D` move, `Q E` down/up, left mouse drag looks.
 `Esc` is not bound; close the window to quit. The engine renders with one forward rasterization path (ray query,
-Forward+ and planar reflections were removed on 2026-09-20 / 2026-09-21). The "Renderer" ImGui panel shows, top to
-bottom: "Rasterization Options" ("Use Basic Lighting (Phong)" with two status lines), "Culling & LOD" (frustum
+Forward+ and planar reflections were removed on 2026-09-20 / 2026-09-21) and one mesh shader, `pbr.slang` (the basic
+lighting path went on 2026-09-21). The "Renderer" ImGui panel shows, top to bottom: "Culling & LOD" (frustum
 culling, distance LOD with two thresholds, sampler anisotropy, culling statistics) and "Tone Mapping & Tuning"
-(exposure). Every control has a visible effect; the controls that had none were removed on 2026-09-21. The panel is
+(exposure). The group "Rasterization Options" with "Use Basic Lighting (Phong)" was removed on 2026-09-21 (planned
+change 2). Every control has a visible effect; the controls that had none were removed on 2026-09-21. The panel is
 the same on every GPU: nothing depends on ray-tracing support any more.
 
 Scene: `assets/viking_room/viking_room.gltf` references `viking_room.ktx2`. The renderer decodes **KTX2 only**; a glTF
@@ -90,9 +91,10 @@ glob, and a build tree that still lists a deleted shader fails in the `shaders` 
   asserts on that, so the first key press aborted a Debug build. Fixed 2026-09-13 with `GlfwKeyToImGuiKey()` in
   `src/imgui_system.cpp` (mirrors the official GLFW backend mapping). This is the **only** code in the port that is
   not in the tutorial. See `docs/DELETIONS.md`.
-- Both mesh shaders light the scene with one fixed direction (1, 1, 1). Neither is Phong or PBR in the textbook sense
-  (no specular term, no BRDF), whatever the panel label says. `texturedMesh.slang` adds 10 % ambient; in `pbr.slang`
-  the ambient term is multiplied by `scaleIBLAmbient`, which C++ never sets, so unlit sides are black.
+- `pbr.slang`, the one mesh shader, lights the scene with one fixed direction (1, 1, 1). It is not PBR in the textbook
+  sense (no specular term, no BRDF). Its ambient term is multiplied by `scaleIBLAmbient`, which C++ never sets, so
+  unlit sides are black. Planned change 3 replaces it by the tutorial's full PBR shader. (The second mesh shader,
+  `texturedMesh.slang`, which added 10 % ambient, was removed on 2026-09-21.)
 - Scene lights are uploaded to a storage buffer (PBR set 0, binding 6) every frame, but no shader reads them. The
   ray-query shader, which did, was removed on 2026-09-20.
 - "Sampler max anisotropy" recreates every sampler but does not rewrite the descriptor sets that reference the old

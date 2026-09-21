@@ -117,18 +117,6 @@ class ImGuiSystem {
       return frameAlreadyRendered;
     }
 
-    /**
-	 * @brief Get the current PBR rendering state.
-	 * @return True if PBR rendering is enabled, false otherwise.
-	 */
-    bool IsPBREnabled() const {
-      return pbrEnabled;
-    }
-
-    void SetPBREnabled(bool pbr) {
-      pbrEnabled = pbr;
-    };
-
   private:
     /**
 	 * @brief Initialize the ImGui system (called by constructor).
@@ -174,9 +162,6 @@ class ImGuiSystem {
 
     // Initialization flag
     bool initialized = false;
-
-    // PBR rendering state
-    bool pbrEnabled = true;
 
     // Track if ImGui::Render() was already called in NewFrame() (during loading overlay)
     bool frameAlreadyRendered = false;

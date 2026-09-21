@@ -22,6 +22,8 @@ What was removed from the tutorial engine, and every edit that a deletion forced
 | Planar reflections (2026-09-21) | none | Never active: the render call and the checkbox were commented out upstream and `enablePlanarReflections` was forced to `false` every frame. `renderer_rendering.cpp`: `createReflectionResources()`, `destroyReflectionResources()`, `renderReflectionPass()`, `SetPlanarReflectionsEnabled()`, `TogglePlanarReflections()`, the calls in `cleanupSwapChain()` / `recreateSwapChain()`, the reflection fields in `prepareFrameUboTemplate()`, the reflection-pass override in `updateUniformBufferInternal()`, the safe-point block in `Render()`, the "Reflection resolution scale" slider with the commented-out checkbox, the commented-out pass; `renderer.h`: `ReflectionRT`, `reflections`, `enablePlanarReflections`, `reflectionResolutionScale`, `currentReflectionVP`, `currentReflectionPlane`, `reflectionVPs`, `sampleReflectionVP`, `reflectionResourcesDirty`, `pbrReflectionGraphicsPipeline`, `IsPlanarReflectionsEnabled()`; `renderer_pipelines.cpp`: PBR layout binding 10 and the reflection pipeline; `renderer_resources.cpp`: the binding 10 writes; `shaders/pbr.slang`: the unused `reflectionMap` declaration at binding 10. |
 | Acceleration structures, the rest of ray query (2026-09-21) | `renderer_ray_query.cpp` (whole file: `buildAccelerationStructures()`, `refitTopLevelAS()`), its `CMakeLists.txt` entry | The option "RayQuery shadows (raster)" and `enableRasterRayQueryShadows` (never had a visible effect, `pbr.slang` declares no TLAS); `renderer.h`: `AccelerationStructure`, `blasStructures`, `tlasStructure`, `PendingASDelete`, `GeometryInfo`, `MaterialData`, the geometry / material buffers, the texture table (`rayQueryTex*`, `RQ_MAX_TEX`, `RQ_SLOT_*`, `RQMaterialTexPaths`), all `asBuild*` / `lastASBuilt*` / `asFrozen` / TLAS refit state, `RequestAccelerationStructureBuild()` (both overloads), the AS progress getters, `LoadingPhase::AccelerationStructures`, `GetRayQueryEnabled()`, `GetAccelerationStructureEnabled()`, `rayQueryEnabled`, `accelerationStructureEnabled`, `rayQueryStaticOnly` with its accessors, `MeshResources::materialIndex` (unused), the optional extensions `VK_KHR_ray_query`, `VK_KHR_acceleration_structure`, `VK_KHR_deferred_host_operations`; `renderer_core.cpp`: both feature structs in the query and enable chains, the AS teardown; `renderer_pipelines.cpp`: PBR layout bindings 11 to 13; `renderer_rendering.cpp`: the deferred AS deletion queue, the readiness scan and the build handling in `Render()` (about 290 lines), the TLAS refit, `noASPending`, three UBO-template writes; `renderer_resources.cpp`: the binding 11 to 13 writes (two sites), the AS usage flag on vertex / index buffers, the AS, storage-image and ray-query texture reservations in `createDescriptorPool()`, both "uploads completed" rebuild requests with `anyCompleted`; `imgui_system.cpp`: the AS phase of the loading overlay and the "Building acceleration structures..." window; `scene_loading.cpp`: the AS request (the tutorial's existing no-ray-query branch, jump to `Finalizing`, is what remains); `shaders/common_types.slang`: the `GeometryInfo` and `MaterialData` mirror structs. |
 | Forward+ (2026-09-21) | `renderer_compute.cpp` (whole file: compute descriptor / command pools, Forward+ pipeline, tile buffers, params, dispatch), `shaders/forward_plus_cull.slang` (and its build output), the `CMakeLists.txt` entry | The option "Forward+ (tiled light culling)" and `useForwardPlus` (on by default). Its only real effect was the depth pre-pass; no shader read the tile lists. `renderer.h`: tile size / slice settings, `MAX_LIGHTS_PER_TILE`, `TileHeader`, `ForwardPlusPerFrame`, `forwardPlusPerFrame`, the Forward+ pipeline / layout / set layout, `depthPrepassPipeline`, `pbrPrepassGraphicsPipeline`, `computeDescriptorPool`, `computeCommandPool`, `pbrFixedBindingsWritten`, eight declarations; `renderer_core.cpp`: compute pool, Forward+ and depth pre-pass creation in `Initialize()`, their teardown in `Cleanup()`; `renderer_pipelines.cpp`: PBR layout bindings 7 to 9, the "after pre-pass" PBR pipeline (depth `Equal`, no writes), `createDepthPrepassPipeline()`; `renderer_rendering.cpp`: the depth pre-pass and the compute dispatch in the raster pass (about 95 lines), the per-frame tile buffer resize, the Forward+ rebuild in `recreateSwapChain()`, the checkbox with its lazy creation, two UBO-template writes; `renderer_resources.cpp`: the dummy tile buffers and binding 7 / 8 writes in `createDescriptorSets()`, the compute refresh in `createOrResizeLightStorageBuffers()`, the never-called `refreshPBRForwardPlusBindingsForFrame()`, and the whole "fixed bindings" mechanism of `updateDescriptorSetsForFrame()` (`appendPbrFixedWrites`, `needFixedWrites`), which only served bindings 7 to 13; `shaders/common_types.slang`: `TileHeader`. |
+| Dead `Pipeline` class (2026-09-21, planned change 1) | `pipeline.h` (230 lines), `pipeline.cpp` (712 lines); both were byte-identical to the tutorial | `CMakeLists.txt`: the source-list entry `src/pipeline.cpp`. Nothing else: `pipeline.cpp` was the only file that included `pipeline.h`, and no code ever created a `Pipeline`. The class was a standalone duplicate of the renderer's pipeline set-up (basic, PBR and lighting pipeline, loading `texturedMesh.spv`, `pbr.spv` and `lighting.spv`, whose shader left the port long ago); `Renderer` builds its own pipelines in `renderer_pipelines.cpp`. No forced edit. |
+| Basic lighting path, the option "Use Basic Lighting (Phong)" (2026-09-21, planned change 2) | `shaders/texturedMesh.slang` (and its build output `texturedMesh.spv`, next to the source and in the build tree) | `renderer_rendering.cpp`: the panel group "Rasterization Options" (checkbox, console line, four status lines) with the separator below it; in the opaque draw loop `useBasic` with the basic pipeline choice, the basic descriptor set choice and the basic bind call; in the per-frame descriptor cold-init the creation of the basic sets and the basic UBO / image initialisation; in `cleanupSwapChain()` the resets of `graphicsPipeline` and `pipelineLayout`; in `recreateSwapChain()` the three basic clears, the `createGraphicsPipeline()` call and the re-creation of the basic sets. `renderer_pipelines.cpp`: `createDescriptorSetLayout()` (bindings 0 and 1) and `createGraphicsPipeline()` (it loaded `texturedMesh.spv`). `renderer_core.cpp`: both create calls in `Initialize()` with their log lines, four resets in `Cleanup()`. `renderer_resources.cpp`: the basic branch of `createDescriptorSets()` with `resolvedTexturePath` (only that branch read it), the basic branch of `updateDescriptorSetsForFrame()` with `newlyAllocated` (same), the basic flag initialisation at three sites and the two size checks, the basic set creation in `preAllocateEntityResources()` and `preAllocateEntityResourcesBatch()`, the basic refresh in `ProcessDirtyDescriptorsForFrame()`. `renderer.h`: `pipelineLayout`, `graphicsPipeline`, `descriptorSetLayout`, `EntityResources::basicDescriptorSets` / `basicUboBindingWritten` / `basicImagesWritten`, the declarations `createDescriptorSetLayout()` and `createGraphicsPipeline()`. `imgui_system.h`: `pbrEnabled`, `IsPBREnabled()`, `SetPBREnabled()`. |
 
 ### Ray-query render mode: what stayed on 2026-09-20, and where it went
 
@@ -90,6 +92,51 @@ message appeared. The log shows no acceleration-structure, Forward+, compute or 
 without the three ray-tracing extensions although the GPU (RTX 2070) supports them, and shutdown is clean (no crash
 dump, watchdog silent).
 
+### Dead `Pipeline` class (2026-09-21, planned change 1)
+
+First step of `docs/IMPLEMENTATION_PLAN.md`. Reason for the removal: the class name collides with the named pipelines
+of planned change 4, and the class was the only other code that names `texturedMesh.spv`, which goes with planned
+change 2. Not part of the step, still undecided: `descriptor_manager.*`, `renderdoc_debug_system.*` and
+`resource_manager.*` stay. No forced edit was needed.
+
+Verification on 2026-09-21: Debug build with 0 errors and 0 compiler warnings; the regenerated project no longer lists
+`pipeline.cpp`, and the exe links without it. No shader source changed and no shader was recompiled. The build prints
+one MSBuild warning, `MSB8028`, which has nothing to do with the removal: the intermediate directory
+`build/windows-msvc/VulkanRenderEngine.dir/Debug/` still holds a `.tlog` folder of the project under its old path
+`C:\Dev\VulkanRenderEngine` (the repository folder was renamed). Not verified by the assistant: run time. The deleted
+code was never called, so the run is expected to be unchanged; the owner's run is pending.
+
+### Basic lighting path (2026-09-21, planned change 2): what stayed, and why
+
+Second step of `docs/IMPLEMENTATION_PLAN.md`. Reason for the removal (owner): the option is only a second shader
+underneath, and Phong shading is something the students implement themselves. `texturedMesh.slang` went completely,
+together with everything that loads it, so that nothing is left that could fail at run time. Every object is drawn
+with `pbr.slang`. The template shader for students that belongs to the same step is new code (Rule 1) and is listed
+under "Added code" once the owner has approved it.
+
+| Kept | Reason |
+|---|---|
+| The `usePBR` parameter of both `createDescriptorSets()` overloads (default `false`) and of both `updateDescriptorSetsForFrame()` overloads, `PendingDescOp::usePBR`, the `if (usePBR)` around the PBR branch in both functions | Every caller passes `true` now. Removing the parameter would change four signatures and ten call sites, which the removal does not need. Called with `false`, both functions would now do nothing and return `true`; no caller does that. |
+| The `texturePath` argument of the same functions, and the code that computes it at the call sites (`texturePath`, `texPath`, `basicTexPath`, each with its base-colour fallback) | Only the basic branch used the path; the PBR branch takes its five texture paths from the `MeshComponent`. The argument is part of the signatures, so the callers still have to pass something. |
+| `maxDescriptorSets = MAX_FRAMES_IN_FLIGHT * maxEntities * 2; // 2 pipeline types per entity` in `createDescriptorPool()`, with the three comment lines about the basic pipeline above it | Unused pool capacity, number not rewritten, as with the earlier removals. The comments explain the numbers that stayed, so they stayed too. |
+
+Behaviour that follows from the removal:
+
+- The panel has two groups, "Culling & LOD" and "Tone Mapping & Tuning". Every opaque object is drawn with
+  `pbrGraphicsPipeline`, which was the default before.
+- Each entity allocates `MAX_FRAMES_IN_FLIGHT` descriptor sets instead of twice that number.
+- Start-up no longer reads `shaders/texturedMesh.spv`. The console loses the lines "Creating descriptor set
+  layout...", "Descriptor set layout created successfully", "Creating graphics pipeline...", "Graphics pipeline
+  created successfully" and "Creating main graphics pipeline with depth format: ...".
+- In the descriptor cold-init of `Render()` the inner `if` of each of the three blocks now repeats the outer
+  condition. Both are tutorial lines; the outer one lost its basic operand (forced edit below).
+
+Verification on 2026-09-21: `cmake --preset windows-msvc` re-run (the shader list is a configure-time glob), then a
+Debug build with 0 errors and 0 compiler warnings (the `MSB8028` warning described above is still printed). No shader
+source changed: `composite.spv`, `imgui.spv` and `pbr.spv` are byte-identical (SHA-256) to the binaries from before
+the step, and `texturedMesh.spv` was not created again. A search of `src/` finds none of the removed names any more.
+Not verified by the assistant: run time (the panel, the picture, the validation output); the owner's run is pending.
+
 ## Forced edits (code that had to change because of a deletion)
 
 | Date | File | Edit | Why |
@@ -115,6 +162,10 @@ dump, watchdog silent).
 | 2026-09-21 | `imgui_system.cpp` | `yBase = 10.0f + (showASBuild ? (90.0f + 10.0f) : 0.0f)` became `yBase = 10.0f` | AS status window deleted |
 | 2026-09-21 | `scene_loading.cpp` | `} else {` of the AS request became `{`; its comment lost "No acceleration structure build needed;" | the `if` branch (AS request) was deleted, the tutorial's else branch is what runs |
 | 2026-09-21 | 13 comments: `renderer.h` (4), `renderer_core.cpp` (4), `renderer_resources.cpp` (3), `imgui_system.cpp` (1), `scene_loading.cpp` (1) | words about AS builds, Forward+, ray tracing or reflection render targets trimmed, e.g. "(AS build, descriptor cold-init, etc.)" became "(descriptor cold-init, etc.)" | comment referred to deleted code |
+| 2026-09-21, planned change 2 | `renderer_rendering.cpp`, opaque draw loop | `} else {` became `{` twice (after the deleted basic pipeline choice and after the deleted basic bind call); `auto* descSetsPtr = useBasic ? &job.entityRes->basicDescriptorSets : &job.entityRes->pbrDescriptorSets;` became `auto* descSetsPtr = &job.entityRes->pbrDescriptorSets;` | `useBasic` and the basic sets deleted. The bare scopes keep the PBR lines byte-identical |
+| 2026-09-21, planned change 2 | `renderer_rendering.cpp`, descriptor cold-init in `Render()` | three conditions lost their basic operand: `entityRes.basicDescriptorSets.empty() \|\| `, ` \|\| !entityRes.basicUboBindingWritten[currentFrame]`, ` \|\| !entityRes.basicImagesWritten[currentFrame]` | members deleted |
+| 2026-09-21, planned change 2 | `renderer_resources.cpp`, `createDescriptorSets()` and `updateDescriptorSetsForFrame()` | `usePBR ? *pbrDescriptorSetLayout : *descriptorSetLayout` became `*pbrDescriptorSetLayout`, and `usePBR ? res.pbrDescriptorSets : res.basicDescriptorSets` became `res.pbrDescriptorSets` (each once per function) | the second operand named a deleted member |
+| 2026-09-21, planned change 2 | 4 comments: `renderer.h` (1), `renderer_rendering.cpp` (1), `renderer_resources.cpp` (2) | words about the basic pipeline trimmed: ", Basic: b1", "for basic pipeline", "BOTH basic and", "for the basic pipeline" | comment referred to deleted code |
 
 ## Added code (the only exception to "deletions only")
 

@@ -109,8 +109,8 @@ compiles the shader files into `VkShaderModule` instances.
 
 **Gap.** The "abstracted pipeline configuration" does not exist. Each pipeline (textured mesh, the PBR variants
 opaque / blended / premultiplied / glass, composite, ImGui) is hard-coded with its shader file name, vertex layout,
-descriptor layout and fixed-function state. The unused `Pipeline` class (`src/pipeline.h`) hard-codes the same
-pipelines and is no abstraction either. Slang compilation is a build step, not something the engine does at run time;
+descriptor layout and fixed-function state. The unused `Pipeline` class (`src/pipeline.h`) hard-coded the same
+pipelines and was no abstraction either; it was deleted on 2026-09-21 (planned change 1). Slang compilation is a build step, not something the engine does at run time;
 acceptable, but the thesis should say so.
 
 ### `descriptor` — Hidden descriptor management (Must)
@@ -120,7 +120,7 @@ Thesis refs: `ki:6_descriptor_management`.
 **Requirement.** Descriptor pools, descriptor set layouts and the memory mapping of UBOs that inject CPU data into the
 shaders are handled in the background.
 
-**Code today.** The descriptor pool, the basic and PBR set layouts, per-entity per-frame uniform
+**Code today.** The descriptor pool, the PBR set layouts (the basic one went on 2026-09-21), per-entity per-frame uniform
 buffers with persistent mapping, deferred descriptor updates (`MarkEntityDescriptorsDirty()`,
 `ProcessDirtyDescriptorsForFrame()`) and refreshes when textures stream in all live in `src/renderer_pipelines.cpp`
 and `src/renderer_resources.cpp`. The standalone `DescriptorManager` is unused.
@@ -167,7 +167,7 @@ on 2026-09-21: in the original entry the students bundled the draw commands in a
 thesis label `ns:1_CB_rendering` is unchanged.)
 
 **Code today.** `Engine::Run()` owns the loop; `Engine::Render()` is private and hands an entity snapshot to
-`Renderer::Render()` (`src/renderer_rendering.cpp`, roughly lines 681-1554), which acquires the image, uploads
+`Renderer::Render()` (`src/renderer_rendering.cpp`, roughly lines 673-1506), which acquires the image, uploads
 lights, culls, records every pass and ImGui, submits and presents. `main.cpp` calls `Initialize`, `SetupScene`, `Run`
 and nothing else. `GetCurrentCommandBuffer()` returns the raw `vk::raii::CommandBuffer`, the native object, not a
 simplified call.
@@ -184,11 +184,12 @@ Thesis refs: `ns:2_pipeline_konfiguration`.
 **Requirement.** Students assign shaders and define pipeline state through simplified abstractions, without writing
 native Vulkan structures.
 
-**Code today.** Pipelines are chosen internally. The only choice left to the user is the basic / PBR toggle in the
-ImGui "Renderer" panel (`RenderMode`, Forward+ and planar reflections were removed on 2026-09-20 / 2026-09-21);
-transparent and glass materials pick their pipeline from the glTF material. Shader names are literals
-(`"shaders/pbr.spv"`, `"shaders/texturedMesh.spv"`) in `src/renderer_pipelines.cpp`. Using an own shader means
-editing `createGraphicsPipeline()` / `createPBRPipeline()` and their `vk::GraphicsPipelineCreateInfo`.
+**Code today.** Pipelines are chosen internally, and the user has no choice left: the basic / PBR toggle of the
+ImGui "Renderer" panel was removed on 2026-09-21 (planned change 2; `RenderMode`, Forward+ and planar reflections
+went on 2026-09-20 / 2026-09-21). Every opaque object uses the PBR pipeline; transparent and glass materials pick
+their pipeline from the glTF material. The shader name is a literal (`"shaders/pbr.spv"`) in
+`src/renderer_pipelines.cpp`. Using an own shader means editing `createPBRPipeline()` and its
+`vk::GraphicsPipelineCreateInfo`.
 
 **Gap.** Not met. Needed: a pipeline description (vertex and fragment shader, topology, cull mode, depth test,
 blending) that the engine turns into a pipeline, and a way to attach it to an entity or material. Rule 1.
@@ -211,8 +212,8 @@ optionally overwritten by the first glTF camera. Lights: `KHR_lights_punctual` l
 
 - Lights are not components: no `LightComponent`, no entity-level API to add or move a light, only the
   renderer-level vector.
-- The raster shaders `texturedMesh.slang` and `pbr.slang` ignore the light buffer and use a fixed direction (1, 1, 1)
-  plus ambient. The engine side is in place: the scene lights are uploaded every frame to a storage buffer bound at
+- The raster shader `pbr.slang` ignores the light buffer and uses a fixed direction (1, 1, 1) plus ambient (the
+  second one, `texturedMesh.slang`, did the same and was removed on 2026-09-21). The engine side is in place: the scene lights are uploaded every frame to a storage buffer bound at
   PBR set 0, binding 6, with the count in `ubo.lightCount`. But no shader reads it. `ray_query.slang` was the one
   shader that shaded with the lights (removed 2026-09-20) and Forward+ only culled them (removed 2026-09-21), so
   "light data provided to the shaders" holds for no shading pass. Closing this needs a raster shader that declares
