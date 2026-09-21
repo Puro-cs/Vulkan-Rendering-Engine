@@ -16,6 +16,7 @@
  */
 #include "imgui/imgui.h"
 #include "imgui_system.h"
+#include "light_component.h"
 #include "mesh_component.h"
 #include "model_loader.h"
 #include "renderer.h"
@@ -450,6 +451,10 @@ void Renderer::recreateSwapChain() {
 
   createPBRPipeline();
   createCompositePipeline();
+  // Rebuild the named pipelines from their descriptions (they use the PBR pipeline layouts created above)
+  for (auto& namedPipeline : namedPipelines) {
+    createNamedPipeline(namedPipeline);
+  }
 
   // Re-create command buffers to ensure fresh recording against new swapchain state
   commandBuffers.clear();
@@ -701,6 +706,17 @@ void Renderer::Render(const std::vector<Entity *>& entities, CameraComponent* ca
         break;
     }
   }
+  // Append the lights of all entities with a LightComponent
+  for (Entity* entity : entities) {
+    if (!entity || !entity->IsActive())
+      continue;
+    auto lightComponent = entity->GetComponent<LightComponent>();
+    if (!lightComponent)
+      continue;
+    if (lightsSubset.size() >= MAX_ACTIVE_LIGHTS)
+      break;
+    lightsSubset.push_back(lightComponent->GetLight());
+  }
   lastFrameLightCount = static_cast<uint32_t>(lightsSubset.size());
   if (!lightsSubset.empty()) {
     updateLightStorageBuffer(currentFrame, lightsSubset, camera);
@@ -858,6 +874,32 @@ void Renderer::Render(const std::vector<Entity *>& entities, CameraComponent* ca
       updateUniformBuffer(currentFrame, entity, &entityRes, camera, tc);
 
       RenderJob job{entity, &entityRes, &meshRes, meshComponent, tc, isAlphaMasked};
+      // An entity that was added to pipelines gets one job per pipeline, in the order in which the
+      // pipelines were created. A pipeline with blending is drawn in the transparent pass.
+      bool addedToPipelines = false;
+      {
+        std::lock_guard<std::mutex> lk(entityPipelinesMutex);
+        auto pipelinesIt = entityPipelines.find(entity);
+        if (pipelinesIt != entityPipelines.end()) {
+          addedToPipelines = true;
+          for (int pipelineIndex : pipelinesIt->second) {
+            RenderJob pipelineJob = job;
+            bool pipelineBlended = useBlended; // "pbr": the material decides, as for every other entity
+            if (pipelineIndex != PBR_PIPELINE) {
+              pipelineJob.pipeline = &namedPipelines[pipelineIndex].pipeline;
+              pipelineBlended = namedPipelines[pipelineIndex].settings.blending;
+            }
+            if (pipelineBlended) {
+              transparentJobs.push_back(pipelineJob);
+            } else {
+              opaqueJobs.push_back(pipelineJob);
+            }
+          }
+        }
+      }
+      if (addedToPipelines) {
+        // jobs were queued above
+      } else
       if (useBlended) {
         transparentJobs.push_back(job);
       } else {
@@ -1108,7 +1150,7 @@ void Renderer::Render(const std::vector<Entity *>& entities, CameraComponent* ca
     // Sort transparent entities back-to-front for correct blending of nested glass/liquids
     if (!transparentJobs.empty()) {
       glm::vec3 camPos = camera ? camera->GetPosition() : glm::vec3(0.0f);
-      std::ranges::sort(transparentJobs,
+      std::ranges::stable_sort(transparentJobs,
                         [camPos](const RenderJob& a, const RenderJob& b) {
                           glm::vec3 pa = a.transformComp ? a.transformComp->GetPosition() : glm::vec3(0.0f);
                           glm::vec3 pb = b.transformComp ? b.transformComp->GetPosition() : glm::vec3(0.0f);
@@ -1175,6 +1217,9 @@ void Renderer::Render(const std::vector<Entity *>& entities, CameraComponent* ca
         {
           selectedPipeline = &pbrGraphicsPipeline; // writes depth, compare Less
           selectedLayout = &pbrPipelineLayout;
+        }
+        if (job.pipeline) {
+          selectedPipeline = job.pipeline; // a named pipeline the entity was added to; same layout
         }
         if (currentPipeline != selectedPipeline) {
           commandBuffers[currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, **selectedPipeline);
@@ -1317,6 +1362,9 @@ void Renderer::Render(const std::vector<Entity *>& entities, CameraComponent* ca
 
         for (const auto& job : transparentJobs) {
           vk::raii::Pipeline* desiredPipeline = job.entityRes->cachedIsGlass ? &glassGraphicsPipeline : &pbrBlendGraphicsPipeline;
+          if (job.pipeline) {
+            desiredPipeline = job.pipeline; // a named pipeline with blending the entity was added to
+          }
           if (desiredPipeline != activeTransparentPipeline) {
             commandBuffers[currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, **desiredPipeline);
             activeTransparentPipeline = desiredPipeline;

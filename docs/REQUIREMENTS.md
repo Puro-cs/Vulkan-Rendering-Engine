@@ -107,7 +107,13 @@ compiles the shader files into `VkShaderModule` instances.
 (`src/renderer_utils.cpp`) wraps the SPIR-V into `vk::raii::ShaderModule`. All mesh pipelines are created in
 `src/renderer_pipelines.cpp` (the ImGui pipeline in `src/imgui_system.cpp`).
 
-**Gap.** The "abstracted pipeline configuration" does not exist. Each pipeline (textured mesh, the PBR variants
+**Status since 2026-09-21 (planned change 4).** Met at the renderer level: `PipelineSettings`
+(`src/pipeline_settings.h`: cull mode, depth test, blending) plus a shader file is the abstracted configuration, and
+`Renderer::CreatePipeline(name, shaderFile, settings)` turns it into a `vk::raii::Pipeline` (shader module from
+`shaders/<name>.spv`, everything else copied from the opaque PBR pipeline). The engine's own pipelines stay
+hard-coded. The owner's run of the test pipeline is pending. The paragraph below describes the state before.
+
+**Gap (before planned change 4).** The "abstracted pipeline configuration" does not exist. Each pipeline (textured mesh, the PBR variants
 opaque / blended / premultiplied / glass, composite, ImGui) is hard-coded with its shader file name, vertex layout,
 descriptor layout and fixed-function state. The unused `Pipeline` class (`src/pipeline.h`) hard-coded the same
 pipelines and was no abstraction either; it was deleted on 2026-09-21 (planned change 1). Slang compilation is a build step, not something the engine does at run time;
@@ -191,8 +197,15 @@ their pipeline from the glTF material. The shader name is a literal (`"shaders/p
 `src/renderer_pipelines.cpp`. Using an own shader means editing `createPBRPipeline()` and its
 `vk::GraphicsPipelineCreateInfo`.
 
-**Gap.** Not met. Needed: a pipeline description (vertex and fragment shader, topology, cull mode, depth test,
-blending) that the engine turns into a pipeline, and a way to attach it to an entity or material. Rule 1.
+**Status since 2026-09-21 (planned change 4).** Met at the renderer level: `CreatePipeline(name, shaderFile,
+settings)` takes a shader file and three settings without any Vulkan structure, and `AddToPipeline(name, entity)`
+attaches entities (none: `"pbr"`; several: one draw per pipeline in creation order; blending: transparent pass).
+Students reach both through `Renderer` today; the wrapper without Vulkan headers follows with planned change 5. The
+owner's run of the test pipeline is pending. The paragraph below describes the state before.
+
+**Gap (before planned change 4).** Not met. Needed: a pipeline description (vertex and fragment shader, topology,
+cull mode, depth test, blending) that the engine turns into a pipeline, and a way to attach it to an entity or
+material. Rule 1.
 
 ### `tr:szenenmanagement` — Scene management and data handling (Must)
 
@@ -210,8 +223,10 @@ optionally overwritten by the first glTF camera. Lights: `KHR_lights_punctual` l
 
 **Gap.** Partly met.
 
-- Lights are not components: no `LightComponent`, no entity-level API to add or move a light, only the
-  renderer-level vector.
+- Closed on 2026-09-21 by planned change 3: `LightComponent` (`src/light_component.h/.cpp`) makes an entity a light;
+  position and direction come from its `TransformComponent`, and `Renderer::Render()` appends the lights of all
+  entities to the glTF lights every frame. `main.cpp` creates the entity "Sun" this way. Before that, lights were
+  not components: there was only the renderer-level vector.
 - Closed on 2026-09-21 by planned change 3 (shader part): `pbr.slang` is now the tutorial's full PBR shader, trimmed,
   and its light loop reads the light buffer. The rest of this item describes the state before, when `pbr.slang`
   ignored the light buffer and used a fixed direction (1, 1, 1) plus ambient (the second shader,

@@ -16,7 +16,9 @@
  */
 #include "mesh_component.h"
 #include "renderer.h"
+#include <algorithm>
 #include <array>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 
@@ -507,6 +509,252 @@ bool Renderer::createCompositePipeline() {
     std::cerr << "Failed to create composite pipeline: " << e.what() << std::endl;
     return false;
   }
+}
+
+// Create a named pipeline from its description.
+// Patterned on the opaque pipeline of createPBRPipeline(): same vertex input, same pipeline layout
+// (PBR descriptor sets and material push constants), same attachment formats. Only the shader file,
+// the cull mode, the depth test and blending come from the description.
+bool Renderer::createNamedPipeline(NamedPipeline& namedPipeline) {
+  try {
+    // Read shader code. The build compiles "shaders/x.slang" to "shaders/x.spv".
+    std::string shaderPath = std::filesystem::path(namedPipeline.shaderFile).replace_extension(".spv").generic_string();
+    auto shaderCode = readFile(shaderPath);
+
+    // Create shader modules
+    vk::raii::ShaderModule shaderModule = createShaderModule(shaderCode);
+
+    // Create shader stage info
+    vk::PipelineShaderStageCreateInfo vertShaderStageInfo{};
+    vertShaderStageInfo.sType = vk::StructureType::ePipelineShaderStageCreateInfo;
+    vertShaderStageInfo.stage = vk::ShaderStageFlagBits::eVertex;
+    vertShaderStageInfo.module = *shaderModule;
+    vertShaderStageInfo.pName = "VSMain";
+
+    vk::PipelineShaderStageCreateInfo fragShaderStageInfo{};
+    fragShaderStageInfo.sType = vk::StructureType::ePipelineShaderStageCreateInfo;
+    fragShaderStageInfo.stage = vk::ShaderStageFlagBits::eFragment;
+    fragShaderStageInfo.module = *shaderModule;
+    fragShaderStageInfo.pName = "PSMain";
+
+    vk::PipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+    // Define vertex and instance binding descriptions
+    auto vertexBindingDescription = Vertex::getBindingDescription();
+    auto instanceBindingDescription = InstanceData::getBindingDescription();
+    std::array<vk::VertexInputBindingDescription, 2> bindingDescriptions = {
+      vertexBindingDescription,
+      instanceBindingDescription
+    };
+
+    // Define vertex and instance attribute descriptions
+    auto vertexAttributeDescriptions = Vertex::getAttributeDescriptions();
+    auto instanceModelMatrixAttributes = InstanceData::getModelMatrixAttributeDescriptions();
+    auto instanceNormalMatrixAttributes = InstanceData::getNormalMatrixAttributeDescriptions();
+
+    // Combine all attribute descriptions
+    std::vector<vk::VertexInputAttributeDescription> allAttributeDescriptions;
+    allAttributeDescriptions.insert(allAttributeDescriptions.end(), vertexAttributeDescriptions.begin(), vertexAttributeDescriptions.end());
+    allAttributeDescriptions.insert(allAttributeDescriptions.end(), instanceModelMatrixAttributes.begin(), instanceModelMatrixAttributes.end());
+    allAttributeDescriptions.insert(allAttributeDescriptions.end(), instanceNormalMatrixAttributes.begin(), instanceNormalMatrixAttributes.end());
+
+    vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = vk::StructureType::ePipelineVertexInputStateCreateInfo;
+    vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindingDescriptions.size());
+    vertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(allAttributeDescriptions.size());
+    vertexInputInfo.pVertexAttributeDescriptions = allAttributeDescriptions.data();
+
+    // Create input assembly info
+    vk::PipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = vk::StructureType::ePipelineInputAssemblyStateCreateInfo;
+    inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
+    inputAssembly.primitiveRestartEnable = vk::False;
+
+    // Create viewport state info
+    vk::PipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = vk::StructureType::ePipelineViewportStateCreateInfo;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    // Create rasterization state info
+    vk::PipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = vk::StructureType::ePipelineRasterizationStateCreateInfo;
+    rasterizer.depthClampEnable = vk::False;
+    rasterizer.rasterizerDiscardEnable = vk::False;
+    rasterizer.polygonMode = vk::PolygonMode::eFill;
+    rasterizer.cullMode = vk::CullModeFlagBits::eNone;
+    rasterizer.frontFace = vk::FrontFace::eCounterClockwise;
+    rasterizer.depthBiasEnable = vk::False;
+    rasterizer.lineWidth = 1.0f;
+
+    // Setting: cull mode
+    switch (namedPipeline.settings.cullMode) {
+      case CullMode::None:
+        rasterizer.cullMode = vk::CullModeFlagBits::eNone;
+        break;
+      case CullMode::Front:
+        rasterizer.cullMode = vk::CullModeFlagBits::eFront;
+        break;
+      case CullMode::Back:
+        rasterizer.cullMode = vk::CullModeFlagBits::eBack;
+        break;
+    }
+
+    // Create multisample state info
+    vk::PipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = vk::StructureType::ePipelineMultisampleStateCreateInfo;
+    multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
+    multisampling.sampleShadingEnable = vk::False;
+
+    // Create depth stencil state info
+    vk::PipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = vk::StructureType::ePipelineDepthStencilStateCreateInfo;
+    depthStencil.depthTestEnable = vk::True;
+    depthStencil.depthWriteEnable = vk::True;
+    depthStencil.depthCompareOp = vk::CompareOp::eLess;
+    depthStencil.depthBoundsTestEnable = vk::False;
+    depthStencil.stencilTestEnable = vk::False;
+
+    // Setting: depth test. LessOrEqual, so that an entity that is drawn by several pipelines
+    // also shows the later ones. A pipeline with blending does not write depth.
+    depthStencil.depthTestEnable = namedPipeline.settings.depthTest ? vk::True : vk::False;
+    depthStencil.depthWriteEnable = (namedPipeline.settings.depthTest && !namedPipeline.settings.blending) ? vk::True : vk::False;
+    depthStencil.depthCompareOp = vk::CompareOp::eLessOrEqual;
+
+    // Create a color blend attachment state
+    vk::PipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.blendEnable = vk::False;
+    colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+
+    // Setting: blending, as in the blended PBR pipeline
+    if (namedPipeline.settings.blending) {
+      colorBlendAttachment.blendEnable = VK_TRUE;
+      // Straight alpha blending: out.rgb = src.rgb*src.a + dst.rgb*(1-src.a)
+      colorBlendAttachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
+      colorBlendAttachment.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+      // Alpha channel keeps destination scaled by inverse src alpha
+      colorBlendAttachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+      colorBlendAttachment.dstAlphaBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+    }
+
+    // Create color blend state info
+    vk::PipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = vk::StructureType::ePipelineColorBlendStateCreateInfo;
+    colorBlending.logicOpEnable = vk::False;
+    colorBlending.logicOp = vk::LogicOp::eCopy;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    // Create dynamic state info
+    std::vector dynamicStates = {
+      vk::DynamicState::eViewport,
+      vk::DynamicState::eScissor
+    };
+
+    vk::PipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = vk::StructureType::ePipelineDynamicStateCreateInfo;
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    // Create pipeline rendering info
+    vk::Format depthFormat = findDepthFormat();
+
+    vk::PipelineRenderingCreateInfo pipelineRenderingInfo{};
+    pipelineRenderingInfo.sType = vk::StructureType::ePipelineRenderingCreateInfo;
+    pipelineRenderingInfo.colorAttachmentCount = 1;
+    pipelineRenderingInfo.pColorAttachmentFormats = &swapChainImageFormat;
+    pipelineRenderingInfo.depthAttachmentFormat = depthFormat;
+    pipelineRenderingInfo.stencilAttachmentFormat = vk::Format::eUndefined;
+
+    vk::GraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = vk::StructureType::eGraphicsPipelineCreateInfo;
+    pipelineInfo.pNext = &pipelineRenderingInfo;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = shaderStages;
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+    // The layouts of the PBR pipelines: opaque pass or transparent pass
+    pipelineInfo.layout = namedPipeline.settings.blending ? *pbrTransparentPipelineLayout : *pbrPipelineLayout;
+
+    namedPipeline.pipeline = vk::raii::Pipeline(device, nullptr, pipelineInfo);
+    return true;
+  } catch (const std::exception& e) {
+    std::cerr << "Failed to create pipeline \"" << namedPipeline.name << "\" from " << namedPipeline.shaderFile << ": " << e.what() << std::endl;
+    return false;
+  }
+}
+
+// Create a named pipeline and keep its description
+bool Renderer::CreatePipeline(const std::string& name, const std::string& shaderFile, const PipelineSettings& settings) {
+  if (!*pbrPipelineLayout) {
+    std::cerr << "CreatePipeline(\"" << name << "\"): the renderer is not initialized yet" << std::endl;
+    return false;
+  }
+  if (name == "pbr") {
+    std::cerr << "CreatePipeline(\"pbr\"): the name \"pbr\" is reserved for the engine's own pipelines" << std::endl;
+    return false;
+  }
+  for (const auto& existing : namedPipelines) {
+    if (existing.name == name) {
+      std::cerr << "CreatePipeline(\"" << name << "\"): a pipeline with this name already exists" << std::endl;
+      return false;
+    }
+  }
+
+  NamedPipeline namedPipeline;
+  namedPipeline.name = name;
+  namedPipeline.shaderFile = shaderFile;
+  namedPipeline.settings = settings;
+  if (!createNamedPipeline(namedPipeline)) {
+    return false;
+  }
+
+  std::lock_guard<std::mutex> lk(entityPipelinesMutex);
+  namedPipelines.push_back(std::move(namedPipeline));
+  std::cout << "Pipeline \"" << name << "\" created from " << shaderFile << std::endl;
+  return true;
+}
+
+// Add an entity to a named pipeline
+bool Renderer::AddToPipeline(const std::string& name, Entity* entity) {
+  if (!entity) {
+    return false;
+  }
+  std::lock_guard<std::mutex> lk(entityPipelinesMutex);
+
+  int pipelineIndex = PBR_PIPELINE;
+  if (name != "pbr") {
+    pipelineIndex = static_cast<int>(namedPipelines.size());
+    for (size_t i = 0; i < namedPipelines.size(); ++i) {
+      if (namedPipelines[i].name == name) {
+        pipelineIndex = static_cast<int>(i);
+        break;
+      }
+    }
+    if (pipelineIndex == static_cast<int>(namedPipelines.size())) {
+      std::cerr << "AddToPipeline: unknown pipeline \"" << name << "\" for " << entity->GetName() << ". Known pipelines: \"pbr\"";
+      for (const auto& known : namedPipelines) {
+        std::cerr << ", \"" << known.name << "\"";
+      }
+      std::cerr << std::endl;
+      return false;
+    }
+  }
+
+  // Keep the list in the order in which the pipelines were created ("pbr" first), without duplicates
+  auto& pipelines = entityPipelines[entity];
+  if (std::find(pipelines.begin(), pipelines.end(), pipelineIndex) == pipelines.end()) {
+    pipelines.push_back(pipelineIndex);
+    std::sort(pipelines.begin(), pipelines.end());
+  }
+  return true;
 }
 
 // Push material properties to the pipeline

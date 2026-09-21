@@ -141,6 +141,7 @@ set(SOURCES_COMMON
     src/transform_component.cpp
     src/mesh_component.cpp
     src/camera_component.cpp
+    src/light_component.cpp
     src/model_loader.cpp
     src/imgui_system.cpp
     src/imgui/imgui.cpp

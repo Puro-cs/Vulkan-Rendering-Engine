@@ -35,6 +35,8 @@ main.cpp
       TransformComponent   position / rotation / scale -> model matrix
       CameraComponent      view / projection, aspect ratio set by Engine on resize
       MeshComponent        CPU-side vertices, indices, instances, material id
+      LightComponent       type, colour, intensity, range, cone angles; position and direction from the
+                           entity's transform (shines along its -Z axis). Own code, added 2026-09-21
 ```
 
 Scene loading is a free function pair in `scene_loading.h/.cpp`: `LoadGLTFModel(engine, path, pos, rotDeg, scale)`
@@ -52,7 +54,8 @@ are drained on the render thread (`ProcessPendingMeshUploads`, `ProcessPendingEn
 | `platform.h/.cpp` | `Platform` interface + `DesktopPlatform` (GLFW) | yes |
 | `renderer.h` | the whole `Renderer` class declaration, UBO / push-constant structs, `LoadingPhase` | yes |
 | `renderer_core.cpp` | instance, debug messenger, device and feature selection, swap chain, sync objects, command pools | yes |
-| `renderer_pipelines.cpp` | descriptor set layouts and graphics pipelines: PBR (opaque, blended, glass; a premultiplied-alpha variant is declared in `renderer.h` but never created, as in the tutorial) and composite | yes |
+| `renderer_pipelines.cpp` | descriptor set layouts and graphics pipelines: PBR (opaque, blended, glass; a premultiplied-alpha variant is declared in `renderer.h` but never created, as in the tutorial) and composite. Since planned change 4 also the named pipelines: `createNamedPipeline()`, `CreatePipeline()`, `AddToPipeline()` (own code) | yes |
+| `pipeline_settings.h` | `CullMode`, `PipelineSettings` (cull mode, depth test, blending): the description of a named pipeline, without Vulkan types (own code, planned change 4) | yes |
 | `renderer_resources.cpp` | buffers, images, textures (KTX2 via libktx), mipmaps, per-entity resources, streaming queues | yes |
 | `renderer_rendering.cpp` | `Renderer::Render()` frame function (see below), light extraction, culling, the "Renderer" ImGui panel | yes |
 | `renderer_utils.cpp` | shader module loading, memory type lookup, layout transitions, copy helpers | yes |
@@ -64,6 +67,7 @@ are drained on the render thread (`ProcessPendingMeshUploads`, `ProcessPendingEn
 | `mikktspace.h/.c` | Morten Mikkelsen tangent generation (C) | yes |
 | `scene_loading.h/.cpp` | `LoadGLTFModel()` | yes |
 | `entity.*`, `component.*`, `transform_component.*`, `camera_component.*`, `mesh_component.*` | entity-component model | yes |
+| `light_component.h/.cpp` | `LightComponent` (not in the tutorial; planned change 3). `GetLight()` returns an `ExtractedLight` in world space; `Renderer::Render()` appends the lights of all entities to the glTF lights every frame | yes |
 | `imgui_system.h/.cpp` | Dear ImGui integration, loading overlay, texture-streaming status window | yes |
 | `crash_reporter.h` | minidump writer (Dbghelp) | yes |
 | `debug_system.h` | `DebugSystem` base, `LogLevel`, `LOGI` macros | yes (macros) |
@@ -81,11 +85,27 @@ A fourth one, the standalone `Pipeline` class (`pipeline.h/.cpp`), was deleted o
 |---|---|---|
 | `pbr.slang` | vert + frag | every mesh. Since 2026-09-21 (planned change 3) it is the tutorial's `pbr_full.slang`, trimmed by deletion: material sampling (metallic-roughness or spec-gloss, normal map, occlusion, emissive, alpha-mask `discard`), a loop over all scene lights in the storage buffer (directional, point, spot, emissive; distance falloff, spot cone, GGX specular plus diffuse), ambient = 10 % of the surface colour (`0.1 * ubo.scaleIBLAmbient`, which C++ sets to 1.0), emissive. Output is linear; `composite` tone-maps. `GlassPSMain` shows the off-screen scene colour through glass (tint, rim, emissive surface term) and tone-maps itself, because glass is drawn after the composite pass. Without a light the scene shows only ambient and emissive |
 | `composite.slang` | vert + frag | fullscreen pass that draws the off-screen opaque colour to the swap chain (exposure, filmic tone map; gamma only on a non-sRGB swap chain) before the transparent pass |
+| `template.slang` | vert + frag | nothing yet: the blank starting point for student shaders (transform plus UV in `VSMain`, the unlit base colour texture sample in `PSMain`). Cut out of the tutorial's `texturedMesh.slang`; compiled to `template.spv`, first usable with the named pipelines of planned change 4 |
 | `imgui.slang` | vert + frag | ImGuiSystem |
 | `common_types`, `pbr_utils`, `lighting_utils`, `tonemapping_utils` | modules | imported by the above, not compiled standalone |
 
 The second mesh shader, `texturedMesh.slang` (the "basic" path behind the panel option "Use Basic Lighting (Phong)"),
 was deleted on 2026-09-21 with its pipeline, descriptor set layout and per-entity descriptor sets (planned change 2).
+
+## Named pipelines (planned change 4, own code)
+
+`Renderer::CreatePipeline(name, shaderFile, settings)` builds a pipeline for a student shader. The student chooses
+four things: the shader file (`"shaders/x.slang"`, loaded as `"shaders/x.spv"`, entry points `VSMain` and `PSMain`),
+the cull mode (default none), the depth test (default on; compare `LessOrEqual`) and blending (default off; on means
+the blend factors of the engine's blended pipeline, no depth writes, transparent pass). Everything else is copied
+from the opaque PBR pipeline, including the PBR pipeline layout, so every named pipeline receives exactly the inputs
+of the next section. The descriptions are kept in creation order and `recreateSwapChain()` rebuilds the pipelines
+from them. Call `CreatePipeline()` after `Initialize()` and before rendering; the name `"pbr"` is reserved.
+
+`Renderer::AddToPipeline(name, entity)` records, in the renderer, which pipelines an entity was added to (an unknown
+name is an error that lists the known names). An entity that was added to no pipeline is drawn as before, with the
+engine's PBR pipelines (`"pbr"`: opaque, blended or glass, chosen from the material). An entity in several pipelines
+gets one render job per pipeline, in creation order with `"pbr"` first. It may be called from the loading thread.
 
 ## What a mesh shader gets from the engine
 
@@ -112,15 +132,15 @@ sRGB swap chain).
 ## One frame (`Renderer::Render`, `renderer_rendering.cpp`)
 
 1. `Engine::Run`: `platform->ProcessEvents()`, delta time, `Update()` (camera controls; entity updates skipped while loading), `Render()` with a snapshot of entity pointers.
-2. Build the frame light list from `staticLights`, upload to the light storage buffer; fill the UBO template from the camera.
+2. Build the frame light list from `staticLights` (the glTF lights) plus the lights of all active entities with a `LightComponent`, upload to the light storage buffer; fill the UBO template from the camera.
 3. Wait on this frame slot's fence, reset it. Safe point: drain pending mesh uploads and entity preallocations.
 4. Apply dirty descriptor writes for this frame index.
-5. Preparation pass: collect active entities with GPU resources, per-frame descriptor cold-init, frustum culling, distance LOD; sort into opaque and transparent jobs.
+5. Preparation pass: collect active entities with GPU resources, per-frame descriptor cold-init, frustum culling, distance LOD; sort into opaque and transparent jobs. An entity that was added to named pipelines gets one job per pipeline (a pipeline with blending: transparent list).
 6. `acquireNextImage`; out-of-date / suboptimal recreates the swap chain and returns.
 7. Grow the light storage buffer if needed, begin the command buffer, process pending texture uploads, draw the "Renderer" panel.
-8. Pass 1: clear colour and depth, draw the opaque entities with `pbr` into the off-screen colour image.
+8. Pass 1: clear colour and depth, draw the opaque jobs into the off-screen colour image, each with the pipeline of its job (`pbr` unless the entity was added to a named pipeline).
 9. Pass 1b: `composite` draws that image to the swap chain (exposure, tone map).
-10. Pass 2: draw the transparent entities, sorted back to front, onto the swap chain with the blended PBR or the glass pipeline; glass samples the off-screen colour.
+10. Pass 2: draw the transparent jobs, sorted back to front (stable, so the jobs of one entity keep their pipeline order), onto the swap chain with the blended PBR pipeline, the glass pipeline or the job's named pipeline; glass samples the off-screen colour.
 11. `imguiSystem->Render()` in its own dynamic-rendering pass on top.
 12. `submit2` with the frame fence, `presentKHR`; recreate the swap chain on out-of-date. Advance `currentFrame` (MAX_FRAMES_IN_FLIGHT slots).
 

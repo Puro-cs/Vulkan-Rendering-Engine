@@ -42,6 +42,7 @@
 #include "memory_pool.h"
 #include "mesh_component.h"
 #include "model_loader.h"
+#include "pipeline_settings.h"
 #include "platform.h"
 #include "thread_pool.h"
 
@@ -653,6 +654,30 @@ class Renderer {
     }
 
     /**
+	 * @brief Create a named pipeline from a shader file and the settings the user chooses.
+	 *
+	 * Call it after Initialize() and before rendering starts. The pipeline uses the vertex layout,
+	 * the descriptor sets and the push constants of the PBR pipeline; the shader file needs the
+	 * entry points VSMain and PSMain. The name "pbr" is reserved for the engine's own pipelines.
+	 * @param name The name of the pipeline, used by AddToPipeline().
+	 * @param shaderFile The shader source, e.g. "shaders/toon.slang" (the build compiles it to "shaders/toon.spv").
+	 * @param settings Cull mode, depth test and blending.
+	 * @return True if the pipeline was created, false otherwise.
+	 */
+    bool CreatePipeline(const std::string& name, const std::string& shaderFile, const PipelineSettings& settings = {});
+
+    /**
+	 * @brief Add an entity to a named pipeline.
+	 *
+	 * An entity that was added to no pipeline is drawn with "pbr". An entity that was added to several
+	 * pipelines is drawn once per pipeline, in the order in which the pipelines were created ("pbr" first).
+	 * @param name The name of the pipeline ("pbr" or a name given to CreatePipeline()).
+	 * @param entity The entity to add.
+	 * @return True if the entity was added, false if the name is unknown.
+	 */
+    bool AddToPipeline(const std::string& name, Entity* entity);
+
+    /**
 	 * @brief Set the gamma correction value for PBR rendering.
 	 * @param _gamma The gamma correction value (typically 2.2).
 	 */
@@ -859,6 +884,22 @@ class Renderer {
     // Shares descriptor layouts and vertex input with the PBR pipelines but uses
     // a dedicated fragment shader entry point for more stable glass shading.
     vk::raii::Pipeline glassGraphicsPipeline = nullptr;
+
+    // Named pipelines created with CreatePipeline(), in the order of their creation. The description
+    // (shader file and settings) is kept so that recreateSwapChain() can rebuild the pipelines.
+    struct NamedPipeline {
+      std::string name;
+      std::string shaderFile;
+      PipelineSettings settings;
+      vk::raii::Pipeline pipeline = nullptr;
+    };
+    std::vector<NamedPipeline> namedPipelines;
+    // The pipelines each entity was added to with AddToPipeline(): indices into namedPipelines in
+    // ascending order, PBR_PIPELINE (-1) for the engine's own "pbr". No entry: the entity is drawn with "pbr".
+    static constexpr int PBR_PIPELINE = -1;
+    std::unordered_map<Entity *, std::vector<int>> entityPipelines;
+    // AddToPipeline() may be called from the scene loading thread while the render thread builds its jobs
+    std::mutex entityPipelinesMutex;
 
     // Fullscreen composite pipeline to draw the opaque off-screen color to the swapchain
     // (used to avoid gamma-incorrect vkCmdCopyImage and to apply tone mapping when desired).
@@ -1136,6 +1177,7 @@ class Renderer {
 		MeshComponent      *meshComp;
 		TransformComponent *transformComp;
 		bool                isAlphaMasked;
+		vk::raii::Pipeline *pipeline = nullptr;        // named pipeline the entity was added to; nullptr: the engine's PBR pipelines
 	};
 	std::unordered_map<Entity *, EntityResources> entityResources;
 
@@ -1257,6 +1299,7 @@ class Renderer {
     bool createPBRDescriptorSetLayout();
 
     bool createPBRPipeline();
+    bool createNamedPipeline(NamedPipeline& namedPipeline);
 
     void pushMaterialProperties(vk::CommandBuffer commandBuffer, const MaterialProperties& material) const;
     bool createCommandPool();

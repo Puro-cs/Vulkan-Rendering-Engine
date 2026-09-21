@@ -411,6 +411,9 @@ void Renderer::Cleanup() {
   pbrPremulBlendGraphicsPipeline = nullptr;
   glassGraphicsPipeline = nullptr;
   compositePipeline = nullptr;
+  // Named pipelines and the entities that were added to them
+  namedPipelines.clear();
+  entityPipelines.clear();
 
   pbrPipelineLayout = nullptr;
   compositePipelineLayout = nullptr;

@@ -12,8 +12,8 @@ carries a "Status" line. Sizes (S, M, L) are estimates.
    the chat and nothing is written before the owner approves it. Large steps are proposed in several diffs, the
    public interface (header) first.
 3. The edit.
-4. Debug build with 0 errors. `docs/WORKFLOW.md` allows a build without asking only after a deletion; for the steps
-   with new code the owner has to allow it (suggestion: change that line of `WORKFLOW.md` once, for steps 2 to 9).
+4. Debug build with 0 errors. The owner allowed it on 2026-09-21 for every change of steps 2 to 9 without asking
+   (`docs/WORKFLOW.md`); the exe is still only run by the owner.
 5. After a shader file was added or deleted: `cmake --preset windows-msvc` again (the shader list is a configure-time
    glob), and the stale `.spv` next to the source is removed.
 6. The owner runs the exe and reports against the checklist of the step. The count of validation messages stays at
@@ -74,8 +74,9 @@ deleted, configure re-run, Debug build with 0 errors, `pbr.spv` / `composite.spv
 before. Beyond the plan, because only the basic branches read them: `resolvedTexturePath` in `createDescriptorSets()`
 and `newlyAllocated` in `updateDescriptorSetsForFrame()` went too, as did the three
 `updateDescriptorSetsForFrame(..., false, ...)` calls (the plan only named the four `createDescriptorSets(..., false)`
-calls). Kept: the `usePBR` and `texturePath` parameters. Sub-step 8 (template) is proposed in the chat and waits for
-the owner's approval; the owner's run is pending. Docs are updated as listed above.
+calls). Kept: the `usePBR` and `texturePath` parameters. Sub-step 8 (template): the owner approved the diff on
+2026-09-21; `src/shaders/template.slang` is written (69 lines, one line that is not a tutorial line) and compiles to
+`template.spv` in the project build. The step is done; the owner's run is pending. Docs are updated as listed above.
 
 ## Step 3: real lighting (Rule 3 plus Rule 2, Rule 1 for three additions, M to L)
 
@@ -109,9 +110,13 @@ from 635 to 351 lines in four cumulative stages that were each compiled with `sl
 scope, two comments), every other line is a tutorial line; the compiled shader declares exactly set 0 bindings 0 to
 6, set 1 binding 0 and the material push constants. The two `scaleIBLAmbient` lines are in
 `prepareFrameUboTemplate()`. Debug build with 0 errors. Sub-steps 4 to 6 (`LightComponent`, the appended entity
-lights, the "Sun") are proposed in the chat as diffs, test-compiled in a scratch folder with the project's compiler
-settings, and wait for the owner's approval. Until then the Viking room shows only its 10 % ambient light. The
-owner's run is pending. Log: `docs/DELETIONS.md`.
+lights, the "Sun") were proposed in the chat as diffs, test-compiled in a scratch folder with the project's compiler
+settings, approved by the owner on 2026-09-21 and then written as proposed: `light_component.h/.cpp` with the CMake
+entry, 11 lines plus an include in `Render()`, 16 lines plus an include in `SetupScene()` ("Sun": rotation -45°, 45°,
+0°, intensity 3.0, both to be tuned with the owner's run). Configure and Debug build: 0 errors. The step is done;
+the owner's run is pending. Log: `docs/DELETIONS.md`. Decided with this step: new files of the owner carry the
+Apache-2.0 header with the owner's name, and the assistant builds after every change of steps 2 to 9
+(`docs/WORKFLOW.md`).
 
 ## Step 4: named pipelines (Rule 1, M)
 
@@ -132,6 +137,23 @@ owner's run is pending. Log: `docs/DELETIONS.md`.
 
 Check: the room appears flat and textured; resizing the window keeps it; removing the test lines gives the lit room
 again. Closes `einfache_pipeline` and `pipeline_shader_automatisierung`.
+
+Status: sub-steps 1 to 6 implemented on 2026-09-21 after the owner approved the complete diff (507 lines, shown in
+the chat, test-compiled before in a scratch copy of the source tree). New `src/pipeline_settings.h`; `renderer.h`
++43 lines, `renderer_pipelines.cpp` +248, `renderer_rendering.cpp` +37 and one changed tutorial line (`sort` became
+`stable_sort`, so that two blended jobs of one entity keep their pipeline order), `renderer_core.cpp` +3, `main.cpp`
++12 (the temporary test). Decisions of the owner: default cull mode none; the list of pipelines per entity lives in
+the renderer (`entityPipelines`), not in `Entity`, so `entity.h` stays byte-identical to the tutorial. Differences to
+the sub-steps above: `"pbr"` is not an entry of the pipeline list but a reserved name with the index -1, always first
+in an entity's list; `AddToPipeline()` is guarded by a mutex because the temporary test (and any scene loading)
+calls it from the loading thread. Open: the owner's run against the check above, then the test lines in `main.cpp`
+are removed and the step moves to "Done".
+
+Incident: the owner's first run of this step crashed at start-up ("A LIST_ENTRY has been corrupted"). The cause was
+the build, not the code of the step: six object files that include the changed `renderer.h` had not been recompiled
+(details and recovery in `docs/BUILD.md`, "Stale object files"). Debug and Release were rebuilt from scratch on
+2026-09-21; an exact check of every object file against MSBuild's dependency log finds nothing stale. No source
+file was changed for the fix. The owner's run of the rebuilt exe is pending.
 
 ## Step 5: the sandbox layer (Rule 1, M to L)
 

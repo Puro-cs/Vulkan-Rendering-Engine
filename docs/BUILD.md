@@ -85,6 +85,25 @@ unbraced `if` (tutorial code).
 After a shader file is added or deleted, run `cmake --preset windows-msvc` again: the `*.slang` list is a configure-time
 glob, and a build tree that still lists a deleted shader fails in the `shaders` target.
 
+### Stale object files (incident of 2026-09-21)
+
+Symptom: the Debug exe stopped at start-up in `ntdll.dll` with "A LIST_ENTRY has been corrupted (i.e. double
+remove)". Cause: not the code. Planned change 4 added members to `class Renderer` in `renderer.h`; the next
+incremental Debug build recompiled only the four `.cpp` files that had changed themselves and skipped six other files
+that include `renderer.h` (`engine`, `imgui_system`, `model_loader`, `renderer_resources`, `renderer_utils`,
+`scene_loading`), although MSBuild's tracking log listed `renderer.h` as their dependency. The exe then mixed two
+layouts of `Renderer`, and the old-layout code wrote into the wrong members. The intermediate folder
+`build/windows-msvc/VulkanRenderEngine.dir/<Config>/` had held tracking logs of two project paths since the repository
+folder was renamed; MSBuild warned about it on every build (`MSB8028`, "can lead to incorrect clean and rebuild
+behavior"). After both intermediate folders were deleted and everything was rebuilt, the warning is gone, and the
+same kind of change (header plus some sources touched) recompiles all ten dependents again.
+
+How to recognise it: in the build output only the list after "Compiling..." is what was compiled; the list after
+"Scanning sources for module dependencies..." is a scan and says nothing about recompilation. An object file under
+`build/windows-msvc/VulkanRenderEngine.dir/<Config>/` that is older than a header it includes is stale.
+How to recover: close the engine, delete `build/windows-msvc/VulkanRenderEngine.dir/Debug` (and `Release`), build
+again; in Visual Studio "Rebuild" does the same. Never ignore `MSB8028`.
+
 ## Known issues
 
 - `ImGuiSystem::HandleKeyboard()` in the tutorial passes raw GLFW key codes to `ImGuiIO::AddKeyEvent()`. Dear ImGui 1.92
@@ -94,10 +113,15 @@ glob, and a build tree that still lists a deleted shader fails in the `shaders` 
 - Since 2026-09-21 (planned change 3) `pbr.slang` is the tutorial's full PBR shader, trimmed: it lights the scene
   with the scene lights (storage buffer at PBR set 0, binding 6) and adds 10 % ambient (`scaleIBLAmbient` is set to
   1.0 by C++ now). A scene without a light is therefore dark: only the ambient part and emissive surfaces show. The
-  Viking room glTF has no `KHR_lights_punctual` light, so the room stays dark until the scene gets a light entity
-  (the rest of planned change 3). Glass gets no light highlights: in the tutorial shader they only existed as a
+  Viking room glTF has no `KHR_lights_punctual` light; the room is lit by the entity "Sun" that `SetupScene()` in
+  `main.cpp` creates (a directional `LightComponent`, rotation -45°, 45°, 0°, intensity 3.0; the owner tried 100.0
+  on 2026-09-21 and went back to 3.0). Glass gets no light highlights: in the tutorial shader they only existed as a
   Forward+ tile loop, which was removed. (The old 109-line `pbr.slang` used the fixed light direction (1, 1, 1); the
   second mesh shader, `texturedMesh.slang`, was removed on 2026-09-21.)
+- Temporary, 2026-09-21: `main.cpp` holds two blocks marked "TEMPORARY TEST of planned change 4 (remove again)".
+  They create the named pipeline "template" from `shaders/template.slang` and add every part of the room to it, so
+  the room is drawn **flat and textured, without lighting**, until the blocks are removed. That is the test of the
+  named pipelines, not a bug.
 - "Sampler max anisotropy" recreates every sampler but does not rewrite the descriptor sets that reference the old
   ones (tutorial behaviour, found by reading the code, not run): expect validation messages when dragging it in Debug.
 - The "Exposure" slider goes down to 0.1, the code clamps at 0.2. Exposure affects the opaque scene only; transparent

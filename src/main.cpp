@@ -17,6 +17,7 @@
 #include "camera_component.h"
 #include "crash_reporter.h"
 #include "engine.h"
+#include "light_component.h"
 #include "scene_loading.h"
 #include "transform_component.h"
 
@@ -58,6 +59,22 @@ void SetupScene(Engine *engine)
     // Set the camera as the active camera
 	engine->SetActiveCamera(camera);
 
+	// Create a light entity
+	Entity *sunEntity = engine->CreateEntity("Sun");
+	if (!sunEntity)
+	{
+		throw std::runtime_error("Failed to create sun entity");
+	}
+
+	// Add a transform component to the light. A light shines along the -Z axis of its transform.
+	auto *sunTransform = sunEntity->AddComponent<TransformComponent>();
+	sunTransform->SetRotation(glm::vec3(glm::radians(-45.0f), glm::radians(45.0f), 0.0f));
+
+	// Add a light component to the light entity
+	auto *sun = sunEntity->AddComponent<LightComponent>();
+	sun->SetType(ExtractedLight::Type::Directional);
+	sun->SetIntensity(3.0f);
+
 	// Kick off GLTF model loading on a background thread so the main loop
 	// can start and render the UI/progress bar while the scene is being
 	// constructed. Engine::Update will avoid updating entities while
@@ -66,9 +83,21 @@ void SetupScene(Engine *engine)
 	{
 		renderer->SetLoading(true);
 		renderer->SetLoadingPhase(Renderer::LoadingPhase::Textures);
+
+		// TEMPORARY TEST of planned change 4 (remove again): an own pipeline from the template shader
+		renderer->CreatePipeline("template", "shaders/template.slang");
 	}
 	std::thread([engine] {
       LoadGLTFModel(engine, "../assets/viking_room/viking_room.gltf", glm::vec3(0.0f), glm::vec3(-90.0f, 0.0f, 0.0f), glm::vec3(1.0f));
+
+      // TEMPORARY TEST of planned change 4 (remove again): draw every part of the room with "template"
+      for (const auto &entity : engine->GetEntities())
+      {
+        if (entity->GetComponent<MeshComponent>())
+        {
+          engine->GetRenderer()->AddToPipeline("template", entity.get());
+        }
+      }
     }).detach();
 }
 

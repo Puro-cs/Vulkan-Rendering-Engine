@@ -14,31 +14,14 @@ The owner approved this order on 2026-09-21. Implementation started the same day
 that step is implemented. The target is the student-facing interface at the end of this file. Logging, builds and
 runs follow `docs/WORKFLOW.md`. Steps 1 and 2 only delete code (step 2 also adds the template shader); step 3 swaps a
 shader and adds the light component; the student-facing interface starts with step 4. The sub-steps, the code each
-step touches and its checks are in `docs/IMPLEMENTATION_PLAN.md`. Step 1 is done and listed under "Done"; the
+step touches and its checks are in `docs/IMPLEMENTATION_PLAN.md`. Steps 1 to 3 are done and listed under "Done"; the
 remaining steps keep their numbers, because this file and the plan refer to them by number.
 
-2. `in progress` since 2026-09-21: the deletion part is done and built (log in `docs/DELETIONS.md`); the template
-   shader is proposed and waits for the owner's approval (Rule 1), and the owner's run is pending.
-   Rule 2, and Rule 1 for the template: remove the "Use Basic Lighting (Phong)" option. That is the checkbox
-   with its status lines, `pbrEnabled` / `IsPBREnabled()` / `SetPBREnabled()` in `ImGuiSystem`, the `useBasic`
-   branches of the draw loop, `createGraphicsPipeline()` with `graphicsPipeline` and `pipelineLayout`, the basic
-   descriptor set layout and the per-entity basic descriptor sets with their flags. `texturedMesh.slang` is deleted
-   completely, together with its compiled `.spv` and everything that loads it, so that nothing is left that could
-   fail at run time. Every object is drawn with `pbr.slang`. A template shader for students is added, as blank as
-   possible (working name `shaders/template.slang`; the engine does not load it, and it is first usable with step 4).
-3. `in progress` since 2026-09-21: the shader is swapped and trimmed and the `scaleIBLAmbient` line is in, both
-   built (log in `docs/DELETIONS.md`). `LightComponent`, the appended entity lights and the "Sun" of the example
-   scene are proposed and wait for the owner's approval (Rule 1); until they exist the Viking room shows only its
-   10 % ambient light. The owner's run is pending.
-   Rule 3 plus Rule 2, and Rule 1 for the component, the merged light list and the `scaleIBLAmbient` line:
-   real lighting. `pbr.slang` is replaced by the tutorial's `pbr_full.slang`, trimmed by deletion. The owner's rule
-   for the trimming: keep what the rasterization pipeline uses, drop what belongs to a removed rendering option or
-   needs ray tracing; the result is the table below. It is the shader the tutorial itself loaded as `pbr.slang` until
-   its commit `ccc8dd8` ("Add in Android build support") swapped in the stripped 109-line version. A scene without a
-   light is then black, so the same step adds `LightComponent` (an entity with a transform, collected every frame),
-   merges glTF lights and entity lights instead of replacing the list, and puts a light into the example scene.
-   Closes the light part of `tr:szenenmanagement` and makes the name `"pbr"` true.
-4. `todo`, Rule 1: named pipelines. One function that builds a pipeline from a description (shader file, cull mode,
+4. `in progress` since 2026-09-21: implemented after the owner's approval of the complete diff (default cull mode
+   none, the entity-to-pipeline list lives in the renderer) and compiled; `main.cpp` holds the temporary test (the
+   room is drawn with a pipeline from `template.slang`). Open: the owner's run (room flat and textured, also after a
+   window resize), then the test lines are removed again. Log: `docs/DELETIONS.md`, "Added code".
+   Rule 1: named pipelines. One function that builds a pipeline from a description (shader file, cull mode,
    depth test, blending), patterned on the opaque pipeline of `createPBRPipeline()` and using the PBR layout; the
    descriptions are kept so that a swap-chain recreation can rebuild the pipelines; `AddToPipeline(name, entity)`;
    the draw loops take the pipeline from the object (none: `"pbr"`; several: one draw per pipeline; blending: the
@@ -96,6 +79,22 @@ binding 0 and the material push constants, which is exactly the PBR layout the e
   `CMakeLists.txt`). Its name collided with the pipelines of step 4, and it was the only other code that names
   `texturedMesh.spv`. No forced edit; Debug build with 0 errors. The other three dead files of the candidates list
   were not part of the step and are still undecided.
+- 2026-09-21, `done`, Rule 2, and Rule 1 for the template, planned change 2: removed the "Use Basic Lighting (Phong)"
+  option: the checkbox with its status lines, `pbrEnabled` / `IsPBREnabled()` / `SetPBREnabled()` in `ImGuiSystem`,
+  the `useBasic` branches of the draw loop, `createGraphicsPipeline()` with `graphicsPipeline` and `pipelineLayout`,
+  the basic descriptor set layout and the per-entity basic descriptor sets with their flags. `texturedMesh.slang`
+  was deleted completely, with its compiled `.spv` and everything that loaded it. Every object is drawn with
+  `pbr.slang`. Added after the owner's approval: the template shader `shaders/template.slang`, as blank as possible,
+  cut out of the tutorial's `texturedMesh.slang` with `return baseColor;` as the only new line; the engine does not
+  load it, and it is first usable with step 4. Kept items, forced edits and the added file: `docs/DELETIONS.md`.
+- 2026-09-21, `done`, Rule 3 plus Rule 2, and Rule 1 for four additions, planned change 3: real lighting. `pbr.slang`
+  is the tutorial's `pbr_full.slang`, trimmed by deletion after the table "Planned change 3 in detail" above (635 to
+  351 lines, 3 forced edits).
+  Added after the owner's approval: the tutorial's `scaleIBLAmbient = 1.0f` line in `prepareFrameUboTemplate()`,
+  `LightComponent` (`light_component.h/.cpp`), the loop in `Render()` that appends the lights of all entities to the
+  glTF lights, and the entity "Sun" in `main.cpp` (rotation -45°, 45°, 0°, intensity 3.0; starting values, tuned with
+  the owner's run). Closes the light part of `tr:szenenmanagement` and makes the name `"pbr"` true. Known
+  consequences: `pbr.spv` differs from the tutorial's, glass has no light highlights. Log: `docs/DELETIONS.md`.
 
 ## Candidates already visible in the code (not decided)
 
