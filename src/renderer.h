@@ -654,6 +654,14 @@ class Renderer {
     }
 
     /**
+	 * @brief Get the static lights (the glTF lights of the loaded models).
+	 * @return The static lights.
+	 */
+    const std::vector<ExtractedLight>& GetStaticLights() const {
+      return staticLights;
+    }
+
+    /**
 	 * @brief Create a named pipeline from a shader file and the settings the user chooses.
 	 *
 	 * Call it after Initialize() and before rendering starts. The pipeline uses the vertex layout,

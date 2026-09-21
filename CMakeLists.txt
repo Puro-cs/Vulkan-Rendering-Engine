@@ -128,6 +128,7 @@ endif()
 set(SOURCES_COMMON
     src/engine.cpp
     src/scene_loading.cpp
+    src/sandbox_impl.cpp
     src/platform.cpp
     src/renderer_core.cpp
     src/renderer_rendering.cpp
@@ -155,7 +156,7 @@ set(SOURCES_COMMON
 )
 
 set(SOURCES_DESKTOP
-        src/main.cpp
+        src/sandbox.cpp
 )
 
 # Create target

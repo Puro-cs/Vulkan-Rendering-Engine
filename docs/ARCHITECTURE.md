@@ -19,9 +19,11 @@ no render passes or framebuffers. C++20, Slang shaders, Dear ImGui 1.92 vendored
 ## Ownership
 
 ```
-main.cpp
-  CrashReporter (singleton, minidumps)
-  Engine
+sandbox.cpp (the students' file: SetupScene() and main(); includes only sandbox.h)
+  Sandbox (sandbox.h / sandbox_impl.cpp, own code: the engine as students see it, no Vulkan types)
+    SceneObject, Camera, Light   handles over entities, owned by the Sandbox
+  CrashReporter (singleton, minidumps; started by Sandbox::Initialize())
+  Engine (owned by the Sandbox)
     Platform (DesktopPlatform: GLFW window, input callbacks, surface)
     Renderer (everything Vulkan; ~7.2k lines across renderer_*.cpp)
       MemoryPool        sub-allocates device memory for buffers/images
@@ -39,17 +41,41 @@ main.cpp
                            entity's transform (shines along its -Z axis). Own code, added 2026-09-21
 ```
 
-Scene loading is a free function pair in `scene_loading.h/.cpp`: `LoadGLTFModel(engine, path, pos, rotDeg, scale)`
-runs on a **background thread** started by `SetupScene()` in `main.cpp`. It parses with ModelLoader, creates one
-Entity per glTF mesh node (instanced when a mesh is reused), and hands GPU work to the Renderer through queues that
-are drained on the render thread (`ProcessPendingMeshUploads`, `ProcessPendingEntityPreallocations`,
-`ProcessDirtyDescriptorsForFrame`). All Vulkan submits happen on the main thread.
+Scene loading is a free function pair in `scene_loading.h/.cpp`: `LoadGLTFModel(engine, path, pos, rotDeg, scale)`.
+Since planned change 5 `Sandbox::LoadModel()` calls it **directly on the main thread**, before the render loop
+starts (the tutorial's `main.cpp` ran it on a background thread); the call returns when the entities exist. It parses
+with ModelLoader, creates one Entity per glTF mesh node (instanced when a mesh is reused), and hands GPU work to the
+Renderer through queues that are drained on the render thread during the first frames, behind the loading overlay
+(`ProcessPendingMeshUploads`, `ProcessPendingEntityPreallocations`, `ProcessDirtyDescriptorsForFrame`). Texture
+decoding still runs on the thread pool. All Vulkan submits happen on the main thread. Known limit: the engine's
+watchdog aborts when no frame finishes for 10 s, so a model that takes longer than that to parse trips it; planned
+change 8 can render progress frames while a model loads.
+
+## The sandbox layer (planned change 5, own code)
+
+`sandbox.h` is the only engine header that `sandbox.cpp` includes. It contains no Vulkan types and no engine classes
+(only the forward declaration `class Entity;` and a hidden `Impl`), which was checked with the compiler's include
+listing: `sandbox.cpp` pulls in `sandbox.h`, `pipeline_settings.h`, glm and the standard library.
+
+| Class | What students do with it |
+|---|---|
+| `Sandbox` | `Initialize(title, width, height)`, `Run()`; `CreateCamera`, `SetActiveCamera`, `CreateLight(name, LightType)`, `LoadModel(name, file)`, `CreateSphere(name, radius)`; `CreatePipeline(name, shaderFile, settings)`, `AddToPipeline(name, object)`. Owns the tutorial's `Engine` and every object it hands out |
+| `SceneObject` | a name plus the entities of a loaded model (one per material) or of a simple mesh. `SetPosition` / `SetRotation` / `SetScale`, `Move` / `Rotate` / `Scale` are forwarded to all parts, angles in degrees. `Part(materialName)` addresses one part; the glTF loader names its entities `<model>_Material_<index>_<materialName>` |
+| `Camera` | `SetPosition`, `SetRotation` (degrees; without a rotation it looks along -Z), `SetFieldOfView` |
+| `Light` | `SetPosition`, `SetRotation` or `SetDirection` (a light shines along the -Z axis of its transform; `SetDirection` computes the rotation), `SetColor`, `SetIntensity`, `SetRange`, `SetConeAngles` (degrees) |
+
+A failed `LoadModel()` and an unknown `Part()` print an error and return an empty object, so that calls on it do
+nothing. A second `LoadModel()` appends its glTF lights to those of the first (the tutorial's loader replaces the
+list). `CreateSphere()` queues the GPU upload itself. `Run()` ends the engine's initial load cycle when no model was
+loaded; without that the loading overlay would stay forever. Until planned changes 7 and 8, `main()` still calls one
+`Initialize()` and one `Run()`.
 
 ## Files
 
 | File(s) | Responsibility | Used at run time |
 |---|---|---|
-| `main.cpp` | entry point, window size, validation toggle, `SetupScene()` | yes |
+| `sandbox.cpp` | the students' file: window size, `SetupScene(Sandbox &)` with the example scene (camera, "Sun", Viking room, a sphere), `main()`. Own code; takes the place of the tutorial's `main.cpp` since planned change 5 | yes |
+| `sandbox.h`, `sandbox_impl.cpp` | the student-facing layer (see "The sandbox layer"): `Sandbox`, `SceneObject`, `Camera`, `Light`; crash reporter start, validation toggle, `Engine::Initialize()` / `Run()`. Own code | yes |
 | `engine.h/.cpp` | main loop, delta time, FPS title, entity list with removal queue, camera fly controls, input routing to ImGui | yes |
 | `platform.h/.cpp` | `Platform` interface + `DesktopPlatform` (GLFW) | yes |
 | `renderer.h` | the whole `Renderer` class declaration, UBO / push-constant structs, `LoadingPhase` | yes |

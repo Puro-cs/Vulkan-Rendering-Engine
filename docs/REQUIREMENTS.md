@@ -28,13 +28,13 @@ owner approval); none of them can be closed by deletion alone.
 | `architektur_techstack` | Must | Component architecture; C++20, Vulkan SDK, CMake, GLFW, GLM, tinygltf (glTF 2.0), Slang; Windows 11 | met |
 | `basis_infrastruktur` | Must | Instance, swap chain, dynamic rendering (Vulkan 1.3), colour and depth attachments preconfigured and hidden | met |
 | `synchronisation_speicherverwaltung` | Must | Frames in flight, command buffers, sync objects, GPU memory hidden | met |
-| `pipeline_shader_automatisierung` | Must | Abstract pipeline configurations translated to Vulkan; shaders compiled to `VkShaderModule` | partly (no configurable pipelines) |
+| `pipeline_shader_automatisierung` | Must | Abstract pipeline configurations translated to Vulkan; shaders compiled to `VkShaderModule` | met since planned change 4 (2026-09-21) |
 | `descriptor` | Must | Descriptor pools, set layouts, UBO mapping hidden | met |
 | `input_handling` | Must | GLFW input captured and turned into scene navigation internally | met |
 | `texture_pipeline` | Must | Whole texture life cycle hidden | met (KTX2 only) |
 | `lifecycle` | Must | Students drive the frame life cycle through simplified calls in a fixed order | not met |
-| `einfache_pipeline` | Must | Shader assignment and pipeline state through simplified abstractions | not met |
-| `tr:szenenmanagement` | Must | Load and transform models, cameras, lights without manual buffers; auto-translate to UBO / push constants | partly |
+| `einfache_pipeline` | Must | Shader assignment and pipeline state through simplified abstractions | met since planned changes 4 and 5 (2026-09-21): `Sandbox::CreatePipeline()` / `AddToPipeline()` |
+| `tr:szenenmanagement` | Must | Load and transform models, cameras, lights without manual buffers; auto-translate to UBO / push constants | met since planned changes 3 and 5 (2026-09-21); the owner's run of planned change 5 is pending |
 | `ascii_pipeline` | Could | ASCII rendering of the pipeline in the terminal | not met |
 | `validation_layer` | Must | Validation layers wired in, messages readable | met |
 | `keine_audio_physik` | Won't | No audio, no physics | met |
@@ -70,7 +70,7 @@ render pass setup and frame buffers, i.e. render pass objects. The thesis label 
 
 **Code today.** `Renderer::Initialize()` (`src/renderer_core.cpp`) creates instance, debug messenger, surface, device,
 swap chain, image views, depth image, command pools and sync objects; a resize recreates the swap chain
-(`src/renderer_rendering.cpp`). `main.cpp` only calls `Engine::Initialize()`. Dynamic rendering is mandatory: device
+(`src/renderer_rendering.cpp`). `sandbox.cpp` only calls `Sandbox::Initialize()`, which calls `Engine::Initialize()`. Dynamic rendering is mandatory: device
 selection rejects a GPU without the `dynamicRendering` feature and the feature is enabled at device creation
 (`src/renderer_core.cpp`). `setupDynamicRendering()` (`src/renderer_rendering.cpp`, run again on every swap-chain
 recreation) prepares the `vk::RenderingAttachmentInfo` for colour and depth and the `vk::RenderingInfo`; the four passes
@@ -111,7 +111,8 @@ compiles the shader files into `VkShaderModule` instances.
 (`src/pipeline_settings.h`: cull mode, depth test, blending) plus a shader file is the abstracted configuration, and
 `Renderer::CreatePipeline(name, shaderFile, settings)` turns it into a `vk::raii::Pipeline` (shader module from
 `shaders/<name>.spv`, everything else copied from the opaque PBR pipeline). The engine's own pipelines stay
-hard-coded. The owner's run of the test pipeline is pending. The paragraph below describes the state before.
+hard-coded. The owner ran a test pipeline from `template.slang` successfully on 2026-09-21. The paragraph below
+describes the state before.
 
 **Gap (before planned change 4).** The "abstracted pipeline configuration" does not exist. Each pipeline (textured mesh, the PBR variants
 opaque / blended / premultiplied / glass, composite, ImGui) is hard-coded with its shader file name, vertex layout,
@@ -142,7 +143,7 @@ the scene works without the student implementing or exposing an input interface.
 
 **Code today.** `DesktopPlatform` registers the GLFW callbacks; `Engine::handleKeyInput()` / `handleMouseInput()` map
 `W A S D` and the arrows, `Q E` / PageUp PageDown and left-drag; `Engine::UpdateCameraControls()` moves the active
-camera every frame and yields to ImGui when the pointer is over a panel (`src/engine.cpp`). `main.cpp` contains no
+camera every frame and yields to ImGui when the pointer is over a panel (`src/engine.cpp`). `sandbox.cpp` contains no
 input code.
 
 **Gap.** None. Bindings are fixed; `Esc` does not quit (close the window instead).
@@ -174,7 +175,7 @@ thesis label `ns:1_CB_rendering` is unchanged.)
 
 **Code today.** `Engine::Run()` owns the loop; `Engine::Render()` is private and hands an entity snapshot to
 `Renderer::Render()` (`src/renderer_rendering.cpp`, roughly lines 673-1506), which acquires the image, uploads
-lights, culls, records every pass and ImGui, submits and presents. `main.cpp` calls `Initialize`, `SetupScene`, `Run`
+lights, culls, records every pass and ImGui, submits and presents. `sandbox.cpp` calls `Initialize`, `SetupScene`, `Run`
 and nothing else. `GetCurrentCommandBuffer()` returns the raw `vk::raii::CommandBuffer`, the native object, not a
 simplified call.
 
@@ -201,7 +202,7 @@ their pipeline from the glTF material. The shader name is a literal (`"shaders/p
 settings)` takes a shader file and three settings without any Vulkan structure, and `AddToPipeline(name, entity)`
 attaches entities (none: `"pbr"`; several: one draw per pipeline in creation order; blending: transparent pass).
 Students reach both through `Renderer` today; the wrapper without Vulkan headers follows with planned change 5. The
-owner's run of the test pipeline is pending. The paragraph below describes the state before.
+owner ran a test pipeline successfully on 2026-09-21. The paragraph below describes the state before.
 
 **Gap (before planned change 4).** Not met. Needed: a pipeline description (vertex and fragment shader, topology,
 cull mode, depth test, blending) that the engine turns into a pipeline, and a way to attach it to an entity or
@@ -221,11 +222,17 @@ camPos ...) and the `MaterialProperties` push constants every frame. Camera: `Ca
 optionally overwritten by the first glTF camera. Lights: `KHR_lights_punctual` lights and emissive materials become
 `ExtractedLight` entries in a storage buffer; `Renderer::SetStaticLights()` also accepts a hand-built vector.
 
-**Gap.** Partly met.
+**Status since 2026-09-21 (planned change 5).** Met, the owner's run pending. Students load and transform models,
+cameras and lights through `sandbox.h` without touching a buffer: `LoadModel()` returns a `SceneObject` whose
+`SetPosition` / `SetRotation` / `SetScale` / `Move` / `Rotate` / `Scale` reach every part, `CreateSphere()` builds a
+mesh without a file and queues its GPU upload, `CreateCamera()` / `CreateLight()` return handles with their own
+setters. The three gaps below are closed; they are kept as the record of the state before.
+
+**Gap (before planned changes 3 and 5).** Partly met.
 
 - Closed on 2026-09-21 by planned change 3: `LightComponent` (`src/light_component.h/.cpp`) makes an entity a light;
   position and direction come from its `TransformComponent`, and `Renderer::Render()` appends the lights of all
-  entities to the glTF lights every frame. `main.cpp` creates the entity "Sun" this way. Before that, lights were
+  entities to the glTF lights every frame. The scene set-up (`sandbox.cpp` since planned change 5) creates the light "Sun" this way. Before that, lights were
   not components: there was only the renderer-level vector.
 - Closed on 2026-09-21 by planned change 3 (shader part): `pbr.slang` is now the tutorial's full PBR shader, trimmed,
   and its light loop reads the light buffer. The rest of this item describes the state before, when `pbr.slang`
@@ -235,8 +242,9 @@ optionally overwritten by the first glTF camera. Lights: `KHR_lights_punctual` l
   shader that shaded with the lights (removed 2026-09-20) and Forward+ only culled them (removed 2026-09-21), so
   "light data provided to the shaders" holds for no shading pass. Closing this needs a raster shader that declares
   binding 6 and loops over the lights (Rule 1); it is also an obvious first exercise for students.
-- Meshes built in code (`MeshComponent::CreateSphere()`, `SetVertices()`) get GPU buffers only if the caller also
-  invokes `Renderer::EnqueueEntityPreallocationBatch()`; entities without resources are skipped by `Render()`.
+- Closed on 2026-09-21 by planned change 5: `Sandbox::CreateSphere()` queues the upload itself. Before, meshes built
+  in code (`MeshComponent::CreateSphere()`, `SetVertices()`) got GPU buffers only if the caller also invoked
+  `Renderer::EnqueueEntityPreallocationBatch()`; entities without resources are skipped by `Render()`.
 
 ### `ascii_pipeline` — ASCII pipeline visualisation (Could)
 
@@ -255,7 +263,7 @@ Thesis refs: `vl:validation`.
 **Requirement.** The Vulkan validation layers are wired in so that wrong commands are caught and reported as
 understandable messages.
 
-**Code today.** `VK_LAYER_KHRONOS_validation` is requested when `ENABLE_VALIDATION_LAYERS` is set (`main.cpp`: true
+**Code today.** `VK_LAYER_KHRONOS_validation` is requested when `ENABLE_VALIDATION_LAYERS` is set (`sandbox_impl.cpp`: true
 in Debug, false in Release), availability is checked (`checkValidationLayerSupport()`), and a `VK_EXT_debug_utils`
 messenger prints `Validation layer: <message>` (warnings and errors to stderr, the rest to stdout) in
 `src/renderer_core.cpp`.

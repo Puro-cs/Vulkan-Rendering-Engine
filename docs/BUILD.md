@@ -55,13 +55,18 @@ culling, distance LOD with two thresholds, sampler anisotropy, culling statistic
 change 2). Every control has a visible effect; the controls that had none were removed on 2026-09-21. The panel is
 the same on every GPU: nothing depends on ray-tracing support any more.
 
-Scene: `assets/viking_room/viking_room.gltf` references `viking_room.ktx2`. The renderer decodes **KTX2 only**; a glTF
-that references PNG or JPEG loads geometry with the default albedo and prints a warning. `viking_room.png` in the
-assets folder is unused by the engine. Without a loadable scene the window shows only the ImGui panel on black.
+Scene: `SetupScene()` in `src/sandbox.cpp` (the students' file, planned change 5) creates a camera, the directional
+light "Sun", the Viking room and a small white sphere in front of it (`CreateSphere("Sphere", 0.2f)` at
+(0.5, 0.3, -1.2); the position was chosen without seeing the picture). `assets/viking_room/viking_room.gltf`
+references `viking_room.ktx2`. The renderer decodes **KTX2 only**; a glTF that references PNG or JPEG loads geometry
+with the default albedo and prints a warning. `viking_room.png` in the assets folder is unused by the engine. A
+model that cannot be loaded prints an error and leaves an empty object; the rest of the scene is still shown.
+The model is loaded before the first frame: the window stays empty for the moment the parse takes, then the engine's
+loading overlay covers the texture and mesh uploads of the first frames.
 
 ## Expected console output in Debug
 
-Validation layers are on in Debug (`ENABLE_VALIDATION_LAYERS` in `main.cpp`). One message is inherited from the
+Validation layers are on in Debug (`ENABLE_VALIDATION_LAYERS` in `sandbox_impl.cpp`, until planned change 5 in `main.cpp`). One message is inherited from the
 tutorial and is not a bug:
 
 - `robustBufferAccess2` enabled without `robustBufferAccess`
@@ -113,15 +118,11 @@ again; in Visual Studio "Rebuild" does the same. Never ignore `MSB8028`.
 - Since 2026-09-21 (planned change 3) `pbr.slang` is the tutorial's full PBR shader, trimmed: it lights the scene
   with the scene lights (storage buffer at PBR set 0, binding 6) and adds 10 % ambient (`scaleIBLAmbient` is set to
   1.0 by C++ now). A scene without a light is therefore dark: only the ambient part and emissive surfaces show. The
-  Viking room glTF has no `KHR_lights_punctual` light; the room is lit by the entity "Sun" that `SetupScene()` in
-  `main.cpp` creates (a directional `LightComponent`, rotation -45°, 45°, 0°, intensity 3.0; the owner tried 100.0
-  on 2026-09-21 and went back to 3.0). Glass gets no light highlights: in the tutorial shader they only existed as a
+  Viking room glTF has no `KHR_lights_punctual` light; the room is lit by the light "Sun" that `SetupScene()` in
+  `sandbox.cpp` creates (directional, rotation -45°, 45°, 0°, intensity 3.0; the owner tried 100.0 on 2026-09-21
+  and went back to 3.0). Glass gets no light highlights: in the tutorial shader they only existed as a
   Forward+ tile loop, which was removed. (The old 109-line `pbr.slang` used the fixed light direction (1, 1, 1); the
   second mesh shader, `texturedMesh.slang`, was removed on 2026-09-21.)
-- Temporary, 2026-09-21: `main.cpp` holds two blocks marked "TEMPORARY TEST of planned change 4 (remove again)".
-  They create the named pipeline "template" from `shaders/template.slang` and add every part of the room to it, so
-  the room is drawn **flat and textured, without lighting**, until the blocks are removed. That is the test of the
-  named pipelines, not a bug.
 - "Sampler max anisotropy" recreates every sampler but does not rewrite the descriptor sets that reference the old
   ones (tutorial behaviour, found by reading the code, not run): expect validation messages when dragging it in Debug.
 - The "Exposure" slider goes down to 0.1, the code clamps at 0.2. Exposure affects the opaque scene only; transparent

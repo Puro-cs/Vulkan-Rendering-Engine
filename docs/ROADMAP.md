@@ -14,19 +14,14 @@ The owner approved this order on 2026-09-21. Implementation started the same day
 that step is implemented. The target is the student-facing interface at the end of this file. Logging, builds and
 runs follow `docs/WORKFLOW.md`. Steps 1 and 2 only delete code (step 2 also adds the template shader); step 3 swaps a
 shader and adds the light component; the student-facing interface starts with step 4. The sub-steps, the code each
-step touches and its checks are in `docs/IMPLEMENTATION_PLAN.md`. Steps 1 to 3 are done and listed under "Done"; the
+step touches and its checks are in `docs/IMPLEMENTATION_PLAN.md`. Steps 1 to 4 are done and listed under "Done"; the
 remaining steps keep their numbers, because this file and the plan refer to them by number.
 
-4. `in progress` since 2026-09-21: implemented after the owner's approval of the complete diff (default cull mode
-   none, the entity-to-pipeline list lives in the renderer) and compiled; `main.cpp` holds the temporary test (the
-   room is drawn with a pipeline from `template.slang`). Open: the owner's run (room flat and textured, also after a
-   window resize), then the test lines are removed again. Log: `docs/DELETIONS.md`, "Added code".
-   Rule 1: named pipelines. One function that builds a pipeline from a description (shader file, cull mode,
-   depth test, blending), patterned on the opaque pipeline of `createPBRPipeline()` and using the PBR layout; the
-   descriptions are kept so that a swap-chain recreation can rebuild the pipelines; `AddToPipeline(name, entity)`;
-   the draw loops take the pipeline from the object (none: `"pbr"`; several: one draw per pipeline; blending: the
-   transparent pass). Closes `einfache_pipeline` and `pipeline_shader_automatisierung`.
-5. `todo`, Rule 1: the sandbox layer. `sandbox.h` without Vulkan types, `SceneObject`, a `LoadModel()` that waits,
+5. `in progress` since 2026-09-21: implemented after the owner's approval of the complete diff (class name
+   `Sandbox`, `main.cpp` deleted, the sphere stays in the example scene), Debug and Release built with 0 errors.
+   Open: the owner's run (the lit room as before, plus a small white sphere in front of it). Log:
+   `docs/DELETIONS.md`, "Added code".
+   Rule 1: the sandbox layer. `sandbox.h` without Vulkan types, `SceneObject`, a `LoadModel()` that waits,
    `CreateSphere()` with automatic GPU upload, `CreateCamera()`, `CreateLight()`, `AddToPipeline()` for all parts of
    an object. `sandbox.cpp` takes the place of `main.cpp`, for now still with `Initialize()` and `Run()`. Closes the
    rest of `tr:szenenmanagement`.
@@ -95,6 +90,15 @@ binding 0 and the material push constants, which is exactly the PBR layout the e
   glTF lights, and the entity "Sun" in `main.cpp` (rotation -45°, 45°, 0°, intensity 3.0; starting values, tuned with
   the owner's run). Closes the light part of `tr:szenenmanagement` and makes the name `"pbr"` true. Known
   consequences: `pbr.spv` differs from the tutorial's, glass has no light highlights. Log: `docs/DELETIONS.md`.
+- 2026-09-21, `done`, Rule 1, planned change 4: named pipelines. `Renderer::CreatePipeline(name, shaderFile,
+  settings)` builds a pipeline from a description (`pipeline_settings.h`: cull mode, default none; depth test;
+  blending), patterned on the opaque pipeline of `createPBRPipeline()` and using the PBR layout; the descriptions are
+  kept so that `recreateSwapChain()` rebuilds the pipelines; `AddToPipeline(name, entity)` (none: `"pbr"`; several:
+  one draw per pipeline in creation order; blending: the transparent pass); the list per entity lives in the
+  renderer. One tutorial line changed (`sort` became `stable_sort`). The owner ran the temporary test (the room drawn
+  with a pipeline from `template.slang`) successfully; the test lines were removed again. A crash at the first run
+  came from stale object files, not from the code (see `docs/BUILD.md`). Closes `einfache_pipeline` and
+  `pipeline_shader_automatisierung` at the renderer level. Log: `docs/DELETIONS.md`, "Added code".
 
 ## Candidates already visible in the code (not decided)
 

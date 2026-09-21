@@ -153,7 +153,8 @@ Incident: the owner's first run of this step crashed at start-up ("A LIST_ENTRY 
 the build, not the code of the step: six object files that include the changed `renderer.h` had not been recompiled
 (details and recovery in `docs/BUILD.md`, "Stale object files"). Debug and Release were rebuilt from scratch on
 2026-09-21; an exact check of every object file against MSBuild's dependency log finds nothing stale. No source
-file was changed for the fix. The owner's run of the rebuilt exe is pending.
+file was changed for the fix. The owner ran the rebuilt exe on 2026-09-21: it works. The test lines in `main.cpp`
+were removed again (the file is back to its state after step 3), Debug build with 0 errors. The step is done.
 
 ## Step 5: the sandbox layer (Rule 1, M to L)
 
@@ -173,6 +174,22 @@ file was changed for the fix. The owner's run of the rebuilt exe is pending.
 
 Check: the same picture as after step 3, produced by `sandbox.cpp`; a sphere next to the room; a second model keeps
 the lights of the first. Closes the rest of `tr:szenenmanagement`.
+
+Status: sub-steps 1 to 6 implemented on 2026-09-21 after the owner approved the complete diff (878 lines, shown in
+the chat, test-compiled before in a scratch copy of the source tree; the compiler's include listing confirmed that
+`sandbox.cpp` pulls in no Vulkan and no engine header). Decisions of the owner: the class is called `Sandbox` (a
+second global `Engine` would clash with the tutorial's class), `src/main.cpp` is deleted, the sphere stays in the
+example scene. New: `src/sandbox.h` (287 lines), `src/sandbox_impl.cpp` (468), `src/sandbox.cpp` (70); changed:
+`renderer.h` +8 (`GetStaticLights()`, the one change to a tutorial file) and two lines of `CMakeLists.txt`. Beyond
+the sub-steps: a failed `LoadModel()` and an unknown `Part()` return an empty object instead of `nullptr`, so that
+the students' calls on it do nothing; `Run()` ends the engine's initial load cycle when no model was loaded (without
+it a scene of only spheres would show the loading overlay forever); `Light::SetDirection()` turns a direction into
+the rotation of the light's transform. Known limit, to be solved with step 8: `LoadModel()` blocks the main thread
+before the loop, and the engine's watchdog aborts after 10 s without a frame, so a model that takes longer than that
+to parse trips it. Configure, Debug and Release builds: 0 errors, 0 warnings; every object file checked against
+MSBuild's dependency log, nothing stale. Open: the owner's run. The position of the sphere (0.5, 0.3, -1.2) was
+chosen without seeing the picture. The check "a second model keeps the lights of the first" cannot be seen with the
+Viking room (it has no glTF lights); it needs a second model with a `KHR_lights_punctual` light.
 
 ## Step 6: terminal commands (Rule 1, S)
 
