@@ -12,7 +12,12 @@ the dead panel controls were removed (no status changed; the engine got closer t
 simple shaders, because a mesh shader now sees seven bindings instead of fourteen and no hidden depth pre-pass).
 Also on 2026-09-21 the owner amended two requirement texts, with no code change: `architektur_techstack` names tinygltf
 (glTF 2.0) instead of tinyobjloader and went from partly to met; `basis_infrastruktur` names Vulkan 1.3 dynamic
-rendering instead of render pass objects (`VkRenderPass` / `VkFramebuffer`) and is met without a note.
+rendering instead of render pass objects (`VkRenderPass` / `VkFramebuffer`) and is met without a note. The owner
+also removed the requirement `shader_verwaltung` (own C++ structs handed to shaders through set methods, thesis refs
+`fa:2_shader`, `ns:4_material_shader`): student shaders work with what the engine provides, their own parameters are
+constants in the shader file. The owner also amended `lifecycle`: students call the frame steps in a fixed order, and
+one `DrawScene()` call replaces bundling the draw commands themselves (status unchanged, not met). The planned
+student-facing interface is described in `docs/ROADMAP.md`.
 Every gap that needs code the tutorial does not have falls under Rule 1 of `docs/CODE_CHANGE_RULES.md` (proposal,
 owner approval); none of them can be closed by deletion alone.
 
@@ -27,10 +32,9 @@ owner approval); none of them can be closed by deletion alone.
 | `descriptor` | Must | Descriptor pools, set layouts, UBO mapping hidden | met |
 | `input_handling` | Must | GLFW input captured and turned into scene navigation internally | met |
 | `texture_pipeline` | Must | Whole texture life cycle hidden | met (KTX2 only) |
-| `lifecycle` | Must | Students bundle draw commands and drive the frame through simplified calls | not met |
+| `lifecycle` | Must | Students drive the frame life cycle through simplified calls in a fixed order | not met |
 | `einfache_pipeline` | Must | Shader assignment and pipeline state through simplified abstractions | not met |
 | `tr:szenenmanagement` | Must | Load and transform models, cameras, lights without manual buffers; auto-translate to UBO / push constants | partly |
-| `shader_verwaltung` | Must | Generic shader integration; own C++ structs passed through set methods | not met |
 | `ascii_pipeline` | Could | ASCII rendering of the pipeline in the terminal | not met |
 | `validation_layer` | Must | Validation layers wired in, messages readable | met |
 | `keine_audio_physik` | Won't | No audio, no physics | met |
@@ -121,7 +125,7 @@ buffers with persistent mapping, deferred descriptor updates (`MarkEntityDescrip
 `ProcessDirtyDescriptorsForFrame()`) and refreshes when textures stream in all live in `src/renderer_pipelines.cpp`
 and `src/renderer_resources.cpp`. The standalone `DescriptorManager` is unused.
 
-**Gap.** None for the hiding. Feeding student data into those UBOs is `shader_verwaltung`.
+**Gap.** None.
 
 ### `input_handling` — Engine-internal input handling and navigation (Must)
 
@@ -156,8 +160,11 @@ documented `toktx` conversion step is needed. Same limitation upstream.
 
 Thesis refs: `ns:1_CB_rendering`.
 
-**Requirement.** Students control the rendering flow explicitly: they bundle draw commands in a command buffer and
-define the frame life cycle through simplified calls.
+**Requirement.** Students control the rendering flow explicitly: they define the frame life cycle through simplified
+calls in a fixed order (begin the frame, update the scene, begin rendering, draw the scene, end rendering, end the
+frame). Recording the individual draw commands into the command buffer stays inside the engine. (Amended by the owner
+on 2026-09-21: in the original entry the students bundled the draw commands in a command buffer themselves. The
+thesis label `ns:1_CB_rendering` is unchanged.)
 
 **Code today.** `Engine::Run()` owns the loop; `Engine::Render()` is private and hands an entity snapshot to
 `Renderer::Render()` (`src/renderer_rendering.cpp`, roughly lines 681-1554), which acquires the image, uploads
@@ -165,9 +172,10 @@ lights, culls, records every pass and ImGui, submits and presents. `main.cpp` ca
 and nothing else. `GetCurrentCommandBuffer()` returns the raw `vk::raii::CommandBuffer`, the native object, not a
 simplified call.
 
-**Gap.** Not met. Needed: a small frame API (begin frame, draw an entity or mesh with a pipeline, end frame and
-present) that the student calls from an own loop or a per-frame callback, while acquire, submit and synchronisation
-stay inside `Renderer`. The tutorial has no such API (Rule 1).
+**Gap.** Not met. Needed: the frame API of the student-facing interface in `docs/ROADMAP.md`: six calls with an order
+check (`BeginFrame`, `UpdateScene`, `BeginRendering`, `DrawScene`, `EndRendering`, `EndFrame`) that the student calls
+from an own loop, while acquire, the recording of the draw commands, submit and synchronisation stay inside
+`Renderer`. The tutorial has no such API (Rule 1).
 
 ### `einfache_pipeline` — Explicit but simplified pipeline configuration (Must)
 
@@ -212,24 +220,6 @@ optionally overwritten by the first glTF camera. Lights: `KHR_lights_punctual` l
 - Meshes built in code (`MeshComponent::CreateSphere()`, `SetVertices()`) get GPU buffers only if the caller also
   invokes `Renderer::EnqueueEntityPreallocationBatch()`; entities without resources are skipped by `Render()`.
 
-### `shader_verwaltung` — Generic shader and parameter management (Must)
-
-Thesis refs: `fa:2_shader`, `ns:4_material_shader`.
-
-**Requirement.** An abstract interface to integrate and manage shaders, flexible enough that own C++ structs (light or
-material parameters) are handed over through intuitive set methods; the engine passes them to the GPU and hides the
-Vulkan concepts underneath.
-
-**Code today.** Fixed UBO layout (`UniformBufferObject` in `src/renderer.h`, mirrored in
-`shaders/common_types.slang`), fixed `MaterialProperties` push constants, fixed descriptor set layouts. Public setters
-exist only for built-in values: `SetGamma`, `SetExposure`, `SetStaticLights` (`SetReflectionIntensity` and
-`SetRenderMode` were removed on 2026-09-21). Material values come from glTF and are read-only for the application
-(`ModelLoader::GetMaterial()` returns `const Material*`).
-
-**Gap.** Not met. Needed: a way to register a shader together with its parameter struct and to update that struct
-through a set method (a `SetUniform<T>(...)` style call or a material object), backed by engine-managed UBO or
-push-constant ranges and the matching Slang declaration. Rule 1.
-
 ### `ascii_pipeline` — ASCII pipeline visualisation (Could)
 
 Thesis refs: `vp:pipeline`.
@@ -273,7 +263,7 @@ to them are deleted (`docs/DELETIONS.md`).
 
 Every "hide it" requirement (`ki:*`) is covered by the tutorial engine as ported. Every "expose it to the student"
 requirement (`ns:*`, `fa:*`) is open: the tutorial is a demo application whose renderer does the whole frame itself,
-so there was never a student-facing frame, pipeline or parameter API to keep. Those three (`lifecycle`,
-`einfache_pipeline`, `shader_verwaltung`) need new code and therefore owner approval under Rule 1, and they are the
-ones a student would touch first. Smaller items: raster shaders that use the
-scene lights, a `LightComponent`, PNG textures, the remaining start-up validation message, the optional ASCII view.
+so there was never a student-facing frame or pipeline API to keep. Those two (`lifecycle`, `einfache_pipeline`) need
+new code and therefore owner approval under Rule 1, and they are the ones a student would touch first; their planned
+shape is the student-facing interface in `docs/ROADMAP.md`. Smaller items: raster shaders that use the scene lights,
+a `LightComponent`, PNG textures, the remaining start-up validation message, the optional ASCII view.
