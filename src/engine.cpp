@@ -155,58 +155,110 @@ bool Engine::CreateSyncObjects() {
   return true;
 }
 
-void Engine::Run() {
+// The render loop (planned change 8b): the body of the tutorial's Run() as the loop condition plus the six
+// frame calls of the sandbox file, which the sandbox file calls in this order once per frame.
+
+// The loop condition: the window events, the delta time and the FPS title of one frame
+bool Engine::IsRunning() {
   if (!initialized) {
     throw std::runtime_error("Engine not initialized");
   }
 
   running = true;
 
-  // Main loop
-  while (running) {
-    // Process platform events
-    if (!platform->ProcessEvents()) {
-      running = false;
-      break;
-    }
-
-    // Calculate delta time
-    deltaTimeMs = CalculateDeltaTimeMs();
-
-    // Update frame counter and FPS
-    frameCount++;
-    fpsUpdateTimer += deltaTimeMs.count() * 0.001f;
-
-    // Update window title with FPS and frame time every second
-    if (fpsUpdateTimer >= 1.0f) {
-      uint64_t framesSinceLastUpdate = frameCount - lastFPSUpdateFrame;
-      double avgMs = 0.0;
-      if (framesSinceLastUpdate > 0 && fpsUpdateTimer > 0.0f) {
-        currentFPS = static_cast<float>(static_cast<double>(framesSinceLastUpdate) / static_cast<double>(fpsUpdateTimer));
-        avgMs = (fpsUpdateTimer / static_cast<double>(framesSinceLastUpdate)) * 1000.0;
-      } else {
-        // Avoid divide-by-zero; keep previous FPS and estimate avgMs from last delta
-        currentFPS = std::max(currentFPS, 1.0f);
-        avgMs = static_cast<double>(deltaTimeMs.count());
-      }
-
-      // Update window title with frame count, FPS, and frame time
-      std::string title = "Simple Engine - Frame: " + std::to_string(frameCount) +
-          " | FPS: " + std::to_string(static_cast<int>(currentFPS)) +
-          " | ms: " + std::to_string(static_cast<int>(avgMs));
-      platform->SetWindowTitle(title);
-
-      // Reset timer and frame counter for next update
-      fpsUpdateTimer = 0.0f;
-      lastFPSUpdateFrame = frameCount;
-    }
-
-    // Update
-    Update(deltaTimeMs);
-
-    // Render
-    Render();
+  // Process platform events
+  if (!platform->ProcessEvents()) {
+    running = false;
+    return false;
   }
+
+  // Calculate delta time
+  deltaTimeMs = CalculateDeltaTimeMs();
+
+  // Update frame counter and FPS
+  frameCount++;
+  fpsUpdateTimer += deltaTimeMs.count() * 0.001f;
+
+  // Update window title with FPS and frame time every second
+  if (fpsUpdateTimer >= 1.0f) {
+    uint64_t framesSinceLastUpdate = frameCount - lastFPSUpdateFrame;
+    double avgMs = 0.0;
+    if (framesSinceLastUpdate > 0 && fpsUpdateTimer > 0.0f) {
+      currentFPS = static_cast<float>(static_cast<double>(framesSinceLastUpdate) / static_cast<double>(fpsUpdateTimer));
+      avgMs = (fpsUpdateTimer / static_cast<double>(framesSinceLastUpdate)) * 1000.0;
+    } else {
+      // Avoid divide-by-zero; keep previous FPS and estimate avgMs from last delta
+      currentFPS = std::max(currentFPS, 1.0f);
+      avgMs = static_cast<double>(deltaTimeMs.count());
+    }
+
+    // Update window title with frame count, FPS, and frame time
+    std::string title = "Simple Engine - Frame: " + std::to_string(frameCount) +
+        " | FPS: " + std::to_string(static_cast<int>(currentFPS)) +
+        " | ms: " + std::to_string(static_cast<int>(avgMs));
+    platform->SetWindowTitle(title);
+
+    // Reset timer and frame counter for next update
+    fpsUpdateTimer = 0.0f;
+    lastFPSUpdateFrame = frameCount;
+  }
+
+  return running;
+}
+
+// Frame call 1
+void Engine::BeginFrame() {
+  renderer->BeginFrame();
+}
+
+// Frame call 2: the tutorial's Update() (camera controls, ImGui frame, entity updates), then the renderer's
+// part with a snapshot of the entities, as the tutorial's Render() took it
+void Engine::UpdateScene() {
+  // Update
+  Update(deltaTimeMs);
+
+  // Ensure renderer is ready
+  if (!renderer || !renderer->IsInitialized()) {
+    return;
+  }
+
+  // Check if we have an active camera
+  if (!activeCamera) {
+    return;
+  }
+
+  // Apply any entity removals requested by background threads before taking a snapshot.
+  ProcessPendingEntityRemovals();
+
+  // Snapshot entity pointers under a short shared lock, then release the lock
+  // before rendering. This prevents starving the background loader threads
+  // that need the unique lock to create entities/components.
+  std::vector<Entity *> snapshot; {
+    std::shared_lock<std::shared_mutex> lk(entitiesMutex);
+    snapshot.reserve(entities.size());
+    for (auto& uptr : entities) {
+      snapshot.push_back(uptr.get());
+    }
+  }
+
+  renderer->UpdateScene(snapshot, activeCamera);
+}
+
+// Frame calls 3 to 6: the renderer's (ImGui will be rendered within the render pass)
+void Engine::BeginRendering() {
+  renderer->BeginRendering(imguiSystem.get());
+}
+
+void Engine::DrawScene() {
+  renderer->DrawScene();
+}
+
+void Engine::EndRendering() {
+  renderer->EndRendering(imguiSystem.get());
+}
+
+void Engine::EndFrame() {
+  renderer->EndFrame(imguiSystem.get());
 }
 
 void Engine::Cleanup() {
@@ -496,35 +548,6 @@ void Engine::Update(TimeDelta deltaTime) {
       continue;
     entity->Update(deltaTime);
   }
-}
-
-void Engine::Render() {
-  // Ensure renderer is ready
-  if (!renderer || !renderer->IsInitialized()) {
-    return;
-  }
-
-  // Check if we have an active camera
-  if (!activeCamera) {
-    return;
-  }
-
-  // Apply any entity removals requested by background threads before taking a snapshot.
-  ProcessPendingEntityRemovals();
-
-  // Snapshot entity pointers under a short shared lock, then release the lock
-  // before rendering. This prevents starving the background loader threads
-  // that need the unique lock to create entities/components.
-  std::vector<Entity *> snapshot; {
-    std::shared_lock<std::shared_mutex> lk(entitiesMutex);
-    snapshot.reserve(entities.size());
-    for (auto& uptr : entities) {
-      snapshot.push_back(uptr.get());
-    }
-  }
-
-  // Render the scene (ImGui will be rendered within the render pass)
-  renderer->Render(snapshot, activeCamera, imguiSystem.get());
 }
 
 std::chrono::milliseconds Engine::CalculateDeltaTimeMs() {

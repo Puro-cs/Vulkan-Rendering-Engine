@@ -62,7 +62,7 @@ listing: `sandbox.cpp` pulls in `sandbox.h`, `pipeline_settings.h`, glm and the 
 
 | Class | What students do with it |
 |---|---|
-| `Sandbox` | the initialization chain `InitializeWindow(title, width, height)`, `CreateInstance`, `PickDevice`, `CreateSwapChain`, `InitializeRendering`, `CreatePipelines`, `CreateCommandBuffers`, `CreateSyncObjects` (see "The initialization chain"), `Run()`; `CreateCamera`, `SetActiveCamera`, `CreateLight(name, LightType)`, `LoadModel(name, file)`, `CreateSphere(name, radius)`; `CreatePipeline(name, shaderFile, settings)`, `AddToPipeline(name, object)`. Owns the tutorial's `Engine` and every object it hands out |
+| `Sandbox` | the initialization chain `InitializeWindow(title, width, height)`, `CreateInstance`, `PickDevice`, `CreateSwapChain`, `InitializeRendering`, `CreatePipelines`, `CreateCommandBuffers`, `CreateSyncObjects` (see "The initialization chain"); the render loop `IsRunning()` and the six frame calls `BeginFrame`, `UpdateScene`, `BeginRendering`, `DrawScene`, `EndRendering`, `EndFrame` (see "The render loop"); `CreateCamera`, `SetActiveCamera`, `CreateLight(name, LightType)`, `LoadModel(name, file)`, `CreateSphere(name, radius)`; `CreatePipeline(name, shaderFile, settings)`, `AddToPipeline(name, object)`. Owns the tutorial's `Engine` and every object it hands out |
 | `SceneObject` | a name plus the entities of a loaded model (one per material) or of a simple mesh. `SetPosition` / `SetRotation` / `SetScale`, `Move` / `Rotate` / `Scale` are forwarded to all parts, angles in degrees. `Part(materialName)` addresses one part; the glTF loader names its entities `<model>_Material_<index>_<materialName>` |
 | `Camera` | `SetPosition`, `SetRotation` (degrees; without a rotation it looks along -Z), `SetFieldOfView` |
 | `Light` | `SetPosition`, `SetRotation` or `SetDirection` (a light shines along the -Z axis of its transform; `SetDirection` computes the rotation), `SetColor`, `SetIntensity`, `SetRange`, `SetConeAngles` (degrees) |
@@ -70,8 +70,24 @@ listing: `sandbox.cpp` pulls in `sandbox.h`, `pipeline_settings.h`, glm and the 
 A failed `LoadModel()` and an unknown `Part()` print an error and return an empty object, so that calls on it do
 nothing. A second `LoadModel()` appends its glTF lights to those of the first (the tutorial's loader replaces the
 list). `CreateSphere()` queues the GPU upload itself. `Run()` ends the engine's initial load cycle when no model was
-loaded; without that the loading overlay would stay forever. Until planned change 8, `main()` still calls one `Run()`
-for the whole render loop.
+loaded; without that the loading overlay would stay forever. Since planned change 8 the render loop is in `main()`
+(see "The render loop"); `Run()` no longer exists.
+
+### The render loop (planned change 8, own code)
+
+`main()` renders with `while (sandbox.IsRunning()) { BeginFrame(); UpdateScene(); BeginRendering(); DrawScene();
+EndRendering(); EndFrame(); }`. `IsRunning()` is the head of the tutorial's `Engine::Run()` loop (window events,
+delta time, FPS title) and is false once the window was closed; the six calls are the six parts of the tutorial's
+`Renderer::Render()` (the table in "One frame"), `UpdateScene()` preceded by the tutorial's `Engine::Update()`
+(camera controls, ImGui frame, entity updates, which include the terminal commands). The sandbox layer keeps the
+call that is expected next: a frame call out of order prints `Frame sequence error: DrawScene() was called,
+BeginRendering() was expected. Rendering stopped.`, every later frame call does nothing, and `IsRunning()` returns
+false, so the loop ends and the program exits normally. `IsRunning()` itself requires the previous frame to be
+complete (a forgotten `EndFrame()` is reported the same way) and, on its first call, the complete initialization
+chain and an active camera; the first call also does what the old `Run()` did before its loop: it ends the load
+cycle when no model was loaded and starts the terminal reader. An exception inside a frame call is printed and stops
+rendering, as the old `Run()` caught it. What was `Engine::Run()`, `Engine::Render()`, `Renderer::Render()` and
+`Sandbox::Run()` is gone; every line of the first three lives on in the calls.
 
 ### The initialization chain (planned change 7, own code)
 
@@ -118,23 +134,24 @@ per frame on the main thread and skips that while a model is loading, so the com
 is drained and the commands are applied to the `TransformComponent`s (`Sandbox::Impl::ApplyTerminalCommands()` in
 `sandbox_impl.cpp`). No tutorial file changed for this. Lines typed while the loading overlay shows are applied when
 loading ends. At exit the reader thread is still blocked in `getline`; being detached, it does not keep the process
-alive (checked with a pipe and with a console). Planned change 8 moves the draining into `UpdateScene()`.
+alive (checked with a pipe and with a console). Since planned change 8 the entity updates, and with them the
+draining, happen inside the frame call `UpdateScene()`.
 
 ## Files
 
 | File(s) | Responsibility | Used at run time |
 |---|---|---|
-| `sandbox.cpp` | the students' file: window size, `SetupScene(Sandbox &)` with the example scene (camera, "Sun", Viking room, a sphere), `main()`. Own code; takes the place of the tutorial's `main.cpp` since planned change 5 | yes |
-| `sandbox.h`, `sandbox_impl.cpp` | the student-facing layer (see "The sandbox layer"): `Sandbox`, `SceneObject`, `Camera`, `Light`; crash reporter start, validation toggle, the initialization chain with its order check (planned change 7), `Engine::Run()`; since planned change 6 also `TerminalCommandComponent` and the code that applies the terminal commands. Own code | yes |
+| `sandbox.cpp` | the students' file: window size, `SetupScene(Sandbox &)` with the example scene (camera, "Sun", Viking room, a sphere), `main()` with the eight initialization calls (planned change 7) and the render loop of six calls per frame (planned change 8). Own code; takes the place of the tutorial's `main.cpp` since planned change 5 | yes |
+| `sandbox.h`, `sandbox_impl.cpp` | the student-facing layer (see "The sandbox layer"): `Sandbox`, `SceneObject`, `Camera`, `Light`; crash reporter start, validation toggle, the initialization chain and the render loop, each with its order check (planned changes 7 and 8); since planned change 6 also `TerminalCommandComponent` and the code that applies the terminal commands. Own code | yes |
 | `terminal_commands.h/.cpp` | `TerminalCommands`: the reader thread on `std::cin`, the queue of typed lines, the parser of `Name.Move(x, y, z)` / `Rotate` / `Scale` (see "Terminal commands"). No engine or Vulkan include. Own code, planned change 6 | yes |
-| `engine.h/.cpp` | the eight calls of the initialization chain (since planned change 7; the tutorial's `Initialize()` split), main loop, delta time, FPS title, entity list with removal queue, camera fly controls, input routing to ImGui | yes |
+| `engine.h/.cpp` | the eight calls of the initialization chain (since planned change 7; the tutorial's `Initialize()` split), `IsRunning()` and the six frame calls (since planned change 8; the tutorial's `Run()` and `Render()` split: window events, delta time, FPS title, the entity snapshot), entity list with removal queue, camera fly controls, input routing to ImGui | yes |
 | `platform.h/.cpp` | `Platform` interface + `DesktopPlatform` (GLFW) | yes |
 | `renderer.h` | the whole `Renderer` class declaration, UBO / push-constant structs, `LoadingPhase` | yes |
 | `renderer_core.cpp` | the seven renderer calls of the initialization chain (since planned change 7; the tutorial's `Initialize()` split), instance, debug messenger, device and feature selection, cleanup, watchdog | yes |
 | `renderer_pipelines.cpp` | descriptor set layouts and graphics pipelines: PBR (opaque, blended, glass; a premultiplied-alpha variant is declared in `renderer.h` but never created, as in the tutorial) and composite. Since planned change 4 also the named pipelines: `createNamedPipeline()`, `CreatePipeline()`, `AddToPipeline()` (own code) | yes |
 | `pipeline_settings.h` | `CullMode`, `PipelineSettings` (cull mode, depth test, blending): the description of a named pipeline, without Vulkan types (own code, planned change 4) | yes |
 | `renderer_resources.cpp` | buffers, images, textures (KTX2 via libktx), mipmaps, per-entity resources, streaming queues | yes |
-| `renderer_rendering.cpp` | `Renderer::Render()` frame function (see below), light extraction, culling, the "Renderer" ImGui panel | yes |
+| `renderer_rendering.cpp` | the six frame calls `BeginFrame` to `EndFrame` (since planned change 8; the tutorial's `Render()` split, see below), light extraction, culling, the "Renderer" ImGui panel | yes |
 | `renderer_utils.cpp` | shader module loading, memory type lookup, layout transitions, copy helpers | yes |
 | `vulkan_device.h/.cpp` | `VulkanDevice` helper | yes |
 | `swap_chain.h` | `SwapChain` helper | yes |
@@ -209,18 +226,25 @@ sRGB swap chain).
 
 ## One frame (`Renderer::Render`, `renderer_rendering.cpp`)
 
-1. `Engine::Run`: `platform->ProcessEvents()`, delta time, `Update()` (camera controls; entity updates skipped while loading; among the entity updates the `TerminalCommandComponent` applies the terminal commands typed since the last frame), `Render()` with a snapshot of entity pointers.
-2. Build the frame light list from `staticLights` (the glTF lights) plus the lights of all active entities with a `LightComponent`, upload to the light storage buffer; fill the UBO template from the camera.
-3. Wait on this frame slot's fence, reset it. Safe point: drain pending mesh uploads and entity preallocations.
-4. Apply dirty descriptor writes for this frame index.
-5. Preparation pass: collect active entities with GPU resources, per-frame descriptor cold-init, frustum culling, distance LOD; sort into opaque and transparent jobs. An entity that was added to named pipelines gets one job per pipeline (a pipeline with blending: transparent list).
-6. `acquireNextImage`; out-of-date / suboptimal recreates the swap chain and returns.
-7. Grow the light storage buffer if needed, begin the command buffer, process pending texture uploads, draw the "Renderer" panel.
-8. Pass 1: clear colour and depth, draw the opaque jobs into the off-screen colour image, each with the pipeline of its job (`pbr` unless the entity was added to a named pipeline).
-9. Pass 1b: `composite` draws that image to the swap chain (exposure, tone map).
-10. Pass 2: draw the transparent jobs, sorted back to front (stable, so the jobs of one entity keep their pipeline order), onto the swap chain with the blended PBR pipeline, the glass pipeline or the job's named pipeline; glass samples the off-screen colour.
-11. `imguiSystem->Render()` in its own dynamic-rendering pass on top.
-12. `submit2` with the frame fence, `presentKHR`; recreate the swap chain on out-of-date. Advance `currentFrame` (MAX_FRAMES_IN_FLIGHT slots).
+Since planned change 8 (2026-09-22) the tutorial's `Render()` is six calls in a fixed order, each a member function
+of `Renderer`, called by the `Engine`'s six frame calls, which the students' loop makes (see "The render loop").
+What one call leaves for the next (the acquired image index, the semaphore index, the job lists, the pass-1
+viewport) lives in the member `frame` (`FrameInProgress`). Every line inside the six is the tutorial's, moved; the
+cut and its reasons are in `docs/IMPLEMENTATION_PLAN.md`, step 8.
+
+1. `IsRunning()` (`Engine::IsRunning`, the head of the tutorial's `Run()` loop): `platform->ProcessEvents()`, delta time, the FPS title.
+2. `BeginFrame()`: wait on this frame slot's fence, reset it. Safe point: drain pending mesh uploads and entity preallocations; apply dirty descriptor writes for this frame index. `acquireNextImage`; out-of-date / suboptimal recreates the swap chain at once and marks the frame as skipped: the remaining calls of this frame do nothing (the empty submit that signals the fence stays, as in the tutorial's early returns).
+3. `UpdateScene()`: first `Engine::Update()` (camera controls; ImGui `NewFrame`; entity updates, skipped while loading; among the entity updates the `TerminalCommandComponent` applies the terminal commands typed since the last frame), then a snapshot of entity pointers and the renderer's part: build the frame light list from `staticLights` (the glTF lights) plus the lights of all active entities with a `LightComponent`, upload to the light storage buffer; fill the UBO template from the camera. Preparation pass: collect active entities with GPU resources, per-frame descriptor cold-init, frustum culling, distance LOD; sort into opaque and transparent jobs. An entity that was added to named pipelines gets one job per pipeline (a pipeline with blending: transparent list). Loading-complete check, deferred descriptor writes, transparent jobs sorted back to front (stable, so the jobs of one entity keep their pipeline order).
+4. `BeginRendering(imguiSystem)`: grow the light storage buffer if needed, begin the command buffer, process pending texture uploads, draw the "Renderer" panel. Pass 1 begins: clear colour and depth of the off-screen colour image.
+5. `DrawScene()`: draw the opaque jobs into the off-screen colour image, each with the pipeline of its job (`pbr` unless the entity was added to a named pipeline). Pass 1b: `composite` draws that image to the swap chain (exposure, tone map). Pass 2 begins: draw the transparent jobs onto the swap chain with the blended PBR pipeline, the glass pipeline or the job's named pipeline; glass samples the off-screen colour.
+6. `EndRendering(imguiSystem)`: end pass 2, transition to present, `imguiSystem->Render()` in its own dynamic-rendering pass on top, end the command buffer.
+7. `EndFrame(imguiSystem)`: a skipped frame only ends ImGui's frame. Otherwise `submit2` with the frame fence, `presentKHR`; recreate the swap chain on out-of-date. Advance `currentFrame` (MAX_FRAMES_IN_FLIGHT slots).
+
+Three things moved with the cut, compared with the tutorial's order: `Engine::Update()` runs after the acquire of
+`BeginFrame()` instead of before the whole frame; the light upload and the UBO template come after the fence wait
+and after that update, so that the camera and the transforms of the frame are current; and the image is acquired
+before the preparation pass rather than after it. Everything that writes descriptors or may resize the light buffer
+still runs before the command buffer begins recording, which is what `isRecordingCmd` requires.
 
 There is no depth pre-pass and no compute work any more; every opaque PBR draw uses `pbrGraphicsPipeline` (depth test
 `Less`, depth writes on).

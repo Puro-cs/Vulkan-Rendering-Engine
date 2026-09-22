@@ -32,7 +32,7 @@ owner approval); none of them can be closed by deletion alone.
 | `descriptor` | Must | Descriptor pools, set layouts, UBO mapping hidden | met |
 | `input_handling` | Must | GLFW input captured and turned into scene navigation internally | met |
 | `texture_pipeline` | Must | Whole texture life cycle hidden | met (KTX2 only) |
-| `lifecycle` | Must | Students drive the frame life cycle through simplified calls in a fixed order | not met |
+| `lifecycle` | Must | Students drive the frame life cycle through simplified calls in a fixed order | met since planned change 8 (2026-09-22); the owner's run of part 8b is pending |
 | `einfache_pipeline` | Must | Shader assignment and pipeline state through simplified abstractions | met since planned changes 4 and 5 (2026-09-21): `Sandbox::CreatePipeline()` / `AddToPipeline()` |
 | `tr:szenenmanagement` | Must | Load and transform models, cameras, lights without manual buffers; auto-translate to UBO / push constants | met since planned changes 3 and 5 (2026-09-21; the owner's run of planned change 5 confirmed it on 2026-09-22). Since planned change 6 (2026-09-22) objects and lights can also be moved, rotated and scaled while rendering, through terminal commands |
 | `ascii_pipeline` | Could | ASCII rendering of the pipeline in the terminal | not met |
@@ -177,13 +177,22 @@ frame). Recording the individual draw commands into the command buffer stays ins
 on 2026-09-21: in the original entry the students bundled the draw commands in a command buffer themselves. The
 thesis label `ns:1_CB_rendering` is unchanged.)
 
-**Code today.** `Engine::Run()` owns the loop; `Engine::Render()` is private and hands an entity snapshot to
-`Renderer::Render()` (`src/renderer_rendering.cpp`, roughly lines 673-1506), which acquires the image, uploads
-lights, culls, records every pass and ImGui, submits and presents. `sandbox.cpp` calls the eight initialization
-calls (planned change 7), `SetupScene` and `Run`, and nothing else. `GetCurrentCommandBuffer()` returns the raw
-`vk::raii::CommandBuffer`, the native object, not a simplified call.
+**Status since 2026-09-22 (planned change 8).** Met, the owner's run of part 8b pending. `main()` in `sandbox.cpp`
+renders with `while (sandbox.IsRunning()) { BeginFrame(); UpdateScene(); BeginRendering(); DrawScene();
+EndRendering(); EndFrame(); }`: the six calls are the six parts of the tutorial's `Renderer::Render()` (every line
+kept, `docs/ARCHITECTURE.md`, "One frame"), `UpdateScene()` preceded by the tutorial's `Engine::Update()`. The
+sandbox layer checks the order: a call out of order prints `Frame sequence error: <call>() was called, <expected>()
+was expected. Rendering stopped.` and the loop ends. Acquire, the recording of the draw commands (one `DrawScene()`
+for the whole scene, as amended), submit and synchronisation stay inside `Renderer`. The paragraphs below describe
+the state before.
 
-**Gap.** Not met. Needed: the frame API of the student-facing interface in `docs/ROADMAP.md`: six calls with an order
+**Code before planned change 8.** `Engine::Run()` owned the loop; `Engine::Render()` was private and handed an
+entity snapshot to `Renderer::Render()` (`src/renderer_rendering.cpp`, about 870 lines), which acquired the image,
+uploaded lights, culled, recorded every pass and ImGui, submitted and presented. `sandbox.cpp` called the eight
+initialization calls (planned change 7), `SetupScene` and `Run`, and nothing else. `GetCurrentCommandBuffer()`
+returns the raw `vk::raii::CommandBuffer`, the native object, not a simplified call (unchanged).
+
+**Gap (before planned change 8).** Not met. Needed: the frame API of the student-facing interface in `docs/ROADMAP.md`: six calls with an order
 check (`BeginFrame`, `UpdateScene`, `BeginRendering`, `DrawScene`, `EndRendering`, `EndFrame`) that the student calls
 from an own loop, while acquire, the recording of the draw commands, submit and synchronisation stay inside
 `Renderer`. The tutorial has no such API (Rule 1).

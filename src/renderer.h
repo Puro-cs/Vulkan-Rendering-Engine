@@ -240,18 +240,52 @@ class Renderer {
 	 */
     void Cleanup();
 
+    // The frame calls (planned change 8): the tutorial's Render() in six parts, to be made in this order
+    // once per frame. What one part leaves for the next is kept in `frame`. When the swap chain turns out
+    // to be out of date, the part that finds out recreates it and marks the frame as skipped; the
+    // remaining parts of that frame then do nothing.
+
     /**
-	 * @brief Render the scene.
+	 * @brief Frame call 1: wait until the GPU is done with this frame slot, apply the pending uploads
+	 * and descriptor writes, acquire the swap chain image.
+	 */
+    void BeginFrame();
+
+    /**
+	 * @brief Frame call 2: the lights and the frame-constant UBO data, then the preparation pass over
+	 * the entities (descriptor initialization, culling, LOD, per-entity uniform buffers, the render
+	 * jobs sorted into the opaque and the transparent list).
 	 * @param entities The entities to render.
 	 * @param camera The camera to use for rendering.
+	 */
+    void UpdateScene(const std::vector<Entity *>& entities, CameraComponent* camera);
+
+    /**
+	 * @brief Frame call 3: begin the command buffer, the "Renderer" panel, then begin the first pass
+	 * with the off-screen color image and the depth image cleared.
 	 * @param imguiSystem The ImGui system for UI rendering (optional).
 	 */
-    void Render(const std::vector<std::unique_ptr<Entity>>& entities, CameraComponent* camera, ImGuiSystem* imguiSystem = nullptr);
+    void BeginRendering(ImGuiSystem* imguiSystem);
 
-    // Render overload that accepts a snapshot of raw entity pointers.
-    // This allows the Engine to release its entity-container lock before rendering
-    // (avoiding writer starvation of background loading threads).
-    void Render(const std::vector<Entity *>& entities, CameraComponent* camera, ImGuiSystem* imguiSystem = nullptr);
+    /**
+	 * @brief Frame call 4: the opaque draws into the off-screen image, the composite pass to the swap
+	 * chain image, the transparent draws on top of it.
+	 */
+    void DrawScene();
+
+    /**
+	 * @brief Frame call 5: end the transparent pass, the ImGui pass, the transition to present, end of
+	 * the command buffer.
+	 * @param imguiSystem The ImGui system for UI rendering (optional).
+	 */
+    void EndRendering(ImGuiSystem* imguiSystem);
+
+    /**
+	 * @brief Frame call 6: submit the command buffer, present the image, recreate the swap chain when
+	 * it is out of date, advance to the next frame slot.
+	 * @param imguiSystem The ImGui system for UI rendering (optional).
+	 */
+    void EndFrame(ImGuiSystem* imguiSystem);
 
     /**
 	 * @brief Wait for the device to be idle.
@@ -1229,6 +1263,19 @@ class Renderer {
 		vk::raii::Pipeline *pipeline = nullptr;        // named pipeline the entity was added to; nullptr: the engine's PBR pipelines
 	};
 	std::unordered_map<Entity *, EntityResources> entityResources;
+
+	// The frame in progress (planned change 8): what the tutorial's Render() kept in local variables while
+	// it was one function. Written by one frame call, read by the ones after it, valid until EndFrame().
+	struct FrameInProgress
+	{
+		bool                   skipped = false;        // the swap chain was out of date: the remaining calls of this frame do nothing
+		uint32_t               acquireSemaphoreIndex = 0;
+		uint32_t               imageIndex = 0;
+		std::vector<RenderJob> opaqueJobs;
+		std::vector<RenderJob> transparentJobs;
+		vk::Viewport           viewport{};
+		vk::Rect2D             scissor{};
+	} frame;
 
     // Descriptor pool (declared after entity resources to ensure proper destruction order)
     vk::raii::DescriptorPool descriptorPool = nullptr;

@@ -665,34 +665,141 @@ void Renderer::ensureEntityMaterialCache(Entity* entity, EntityResources& res) {
   res.cachedMaterialProps = mp;
 }
 
-// Render the scene (unique_ptr container overload)
-// Convert to a raw-pointer snapshot so callers can safely release their container locks.
-void Renderer::Render(const std::vector<std::unique_ptr<Entity>>& entities, CameraComponent* camera, ImGuiSystem* imguiSystem) {
-  std::vector<Entity *> snapshot;
-  snapshot.reserve(entities.size());
-  for (const auto& uptr : entities) {
-    snapshot.push_back(uptr.get());
-  }
-  Render(snapshot, camera, imguiSystem);
-}
+// The frame calls (planned change 8): the tutorial's Render() in six parts, made in this order by the
+// Engine once per frame.
 
-// Render the scene (raw pointer snapshot overload)
-void Renderer::Render(const std::vector<Entity *>& entities, CameraComponent* camera, ImGuiSystem* imguiSystem) {
+// Frame call 1: the wait for this frame slot, the pending uploads and descriptor writes, the acquire
+void Renderer::BeginFrame() {
   // Update watchdog timestamp to prove frame is progressing
   lastFrameUpdateTime.store(std::chrono::steady_clock::now(), std::memory_order_relaxed);
   watchdogProgressLabel.store("Render: frame begin", std::memory_order_relaxed);
 
   if (memoryPool)
     memoryPool->setRenderingActive(true);
-  struct RenderingStateGuard {
-    MemoryPool* pool;
-    explicit RenderingStateGuard(MemoryPool* p) : pool(p) {
+
+  frame.skipped = false;
+
+  // Wait for the previous frame's work on this frame slot to complete
+  // Use a finite timeout loop so we can keep the watchdog alive during long GPU work
+  watchdogProgressLabel.store("Render: wait inFlightFence", std::memory_order_relaxed);
+  vk::Result fenceResult = waitForFencesSafe(*inFlightFences[currentFrame], VK_TRUE);
+  if (fenceResult != vk::Result::eSuccess) {
+    std::cerr << "Error: Failed to wait for in-flight fence: " << vk::to_string(fenceResult) << std::endl;
+  }
+
+  // Reset the fence immediately after successful wait, before any new work
+  watchdogProgressLabel.store("Render: reset inFlightFence", std::memory_order_relaxed);
+  device.resetFences(*inFlightFences[currentFrame]);
+
+  // Execute any pending GPU uploads (enqueued by worker/loading threads) on the render thread
+  // at this safe point to ensure all Vulkan submits happen on a single thread.
+  // This prevents validation/GPU-AV PostSubmit crashes due to cross-thread queue usage.
+  watchdogProgressLabel.store("Render: ProcessPendingMeshUploads", std::memory_order_relaxed);
+  ProcessPendingMeshUploads();
+  // Execute any pending per-entity GPU resource preallocation requested by the scene loader.
+  // This prevents background threads from mutating `entityResources`/`meshResources` concurrently
+  // with rendering (which can corrupt unordered_map internals and crash).
+  watchdogProgressLabel.store("Render: ProcessPendingEntityPreallocations", std::memory_order_relaxed);
+  ProcessPendingEntityPreallocations();
+  watchdogProgressLabel.store("Render: after ProcessPendingEntityPreallocations", std::memory_order_relaxed);
+
+  // Safe point: the previous work referencing this frame's descriptor sets is complete.
+  // Apply any deferred descriptor set updates for entities whose textures finished streaming.
+  watchdogProgressLabel.store("Render: ProcessDirtyDescriptorsForFrame", std::memory_order_relaxed);
+  ProcessDirtyDescriptorsForFrame(currentFrame);
+  watchdogProgressLabel.store("Render: after ProcessDirtyDescriptorsForFrame", std::memory_order_relaxed);
+
+  // Acquire next swapchain image
+  // acquireNextImage returns imageIndex (which swapchain image is available).
+  // Use currentFrame to select an imageAvailableSemaphore for acquire.
+  // Use imageIndex to select renderFinishedSemaphore for present (ties semaphore to the specific image).
+  const uint32_t acquireSemaphoreIndex = currentFrame % static_cast<uint32_t>(imageAvailableSemaphores.size());
+
+  uint32_t imageIndex;
+  vk::Result acquireResultCode = vk::Result::eSuccess;
+  // Helper overloads to normalize acquireNextImage return across Vulkan-Hpp versions
+  auto extractAcquire = [](auto const& ret, vk::Result& code, uint32_t& idx) {
+    using RetT = std::decay_t<decltype(ret)>;
+    if constexpr (std::is_same_v<RetT, vk::ResultValue<uint32_t>>) {
+      code = ret.result;
+      idx = ret.value;
+    } else {
+      // Assume older std::pair<vk::Result, uint32_t>
+      code = ret.first;
+      idx = ret.second;
     }
-    ~RenderingStateGuard() {
-      if (pool)
-        pool->setRenderingActive(false);
+  };
+  try {
+    watchdogProgressLabel.store("Render: acquireNextImage", std::memory_order_relaxed);
+    auto acquireRet = swapChain.acquireNextImage(UINT64_MAX, *imageAvailableSemaphores[acquireSemaphoreIndex]);
+    // Vulkan-Hpp changed the return type of acquireNextImage for RAII swapchain across versions.
+    // Support both vk::ResultValue<uint32_t> (newer) and std::pair<vk::Result, uint32_t> (older).
+    extractAcquire(acquireRet, acquireResultCode, imageIndex);
+  } catch (const vk::OutOfDateKHRError&) {
+    watchdogProgressLabel.store("Render: acquireNextImage out-of-date", std::memory_order_relaxed);
+    // Swapchain is out of date (e.g., window resized) before we could
+    // query the result. Trigger recreation and exit this frame cleanly.
+    framebufferResized.store(true, std::memory_order_relaxed);
+    // IMPORTANT: We already reset the in-flight fence at the start of the frame.
+    // Because we're exiting early (no submit), signal it via an empty submit so
+    // swapchain recreation won't hang waiting for an unsignaled fence.
+    {
+      vk::SubmitInfo2 emptySubmit2{};
+      std::lock_guard<std::mutex> lock(queueMutex);
+      graphicsQueue.submit2(emptySubmit2, *inFlightFences[currentFrame]);
     }
-  } guard(memoryPool.get());
+    recreateSwapChain();
+    frame.skipped = true;
+    return;
+  }
+
+  // imageIndex already populated above
+  watchdogProgressLabel.store("Render: acquired swapchain image", std::memory_order_relaxed);
+
+  bool isLoading = IsLoading();
+  bool flag = loadingFlag.load();
+  uint32_t critical = criticalJobsOutstanding.load();
+  bool initDone = initialLoadComplete.load();
+
+  if (acquireResultCode == vk::Result::eSuboptimalKHR || framebufferResized.load(std::memory_order_relaxed)) {
+    framebufferResized.store(false, std::memory_order_relaxed);
+    // Fence was reset earlier; ensure it is signaled before we bail out
+    // to avoid a deadlock in swapchain recreation.
+    {
+      vk::SubmitInfo2 emptySubmit2{};
+      std::lock_guard<std::mutex> lock(queueMutex);
+      graphicsQueue.submit2(emptySubmit2, *inFlightFences[currentFrame]);
+    }
+    recreateSwapChain();
+    frame.skipped = true;
+    return;
+  }
+  if (acquireResultCode != vk::Result::eSuccess) {
+    throw std::runtime_error("Failed to acquire swap chain image");
+  }
+
+  if (framebufferResized.load(std::memory_order_relaxed)) {
+    // Signal the fence via empty submit since no real work will be submitted
+    // this frame, preventing a wait on an unsignaled fence during resize.
+    {
+      vk::SubmitInfo2 emptySubmit2{};
+      std::lock_guard<std::mutex> lock(queueMutex);
+      graphicsQueue.submit2(emptySubmit2, *inFlightFences[currentFrame]);
+    }
+    recreateSwapChain();
+    frame.skipped = true;
+    return;
+  }
+
+  // The image and the semaphore of this frame, for the calls that follow
+  frame.acquireSemaphoreIndex = acquireSemaphoreIndex;
+  frame.imageIndex = imageIndex;
+}
+
+// Frame call 2: the lights, the frame-constant UBO data, the preparation pass over the entities
+void Renderer::UpdateScene(const std::vector<Entity *>& entities, CameraComponent* camera) {
+  if (frame.skipped)
+    return;
 
   // --- Extract lights for the frame ---
   // Build a single light list once per frame (emissive lights only for this scene)
@@ -725,41 +832,13 @@ void Renderer::Render(const std::vector<Entity *>& entities, CameraComponent* ca
   // Pre-calculate frame-constant UBO data
   prepareFrameUboTemplate(camera);
 
-  // Wait for the previous frame's work on this frame slot to complete
-  // Use a finite timeout loop so we can keep the watchdog alive during long GPU work
-  watchdogProgressLabel.store("Render: wait inFlightFence", std::memory_order_relaxed);
-  vk::Result fenceResult = waitForFencesSafe(*inFlightFences[currentFrame], VK_TRUE);
-  if (fenceResult != vk::Result::eSuccess) {
-    std::cerr << "Error: Failed to wait for in-flight fence: " << vk::to_string(fenceResult) << std::endl;
-  }
-
-  // Reset the fence immediately after successful wait, before any new work
-  watchdogProgressLabel.store("Render: reset inFlightFence", std::memory_order_relaxed);
-  device.resetFences(*inFlightFences[currentFrame]);
-
-  // Execute any pending GPU uploads (enqueued by worker/loading threads) on the render thread
-  // at this safe point to ensure all Vulkan submits happen on a single thread.
-  // This prevents validation/GPU-AV PostSubmit crashes due to cross-thread queue usage.
-  watchdogProgressLabel.store("Render: ProcessPendingMeshUploads", std::memory_order_relaxed);
-  ProcessPendingMeshUploads();
-  // Execute any pending per-entity GPU resource preallocation requested by the scene loader.
-  // This prevents background threads from mutating `entityResources`/`meshResources` concurrently
-  // with rendering (which can corrupt unordered_map internals and crash).
-  watchdogProgressLabel.store("Render: ProcessPendingEntityPreallocations", std::memory_order_relaxed);
-  ProcessPendingEntityPreallocations();
-  watchdogProgressLabel.store("Render: after ProcessPendingEntityPreallocations", std::memory_order_relaxed);
-
-  // Safe point: the previous work referencing this frame's descriptor sets is complete.
-  // Apply any deferred descriptor set updates for entities whose textures finished streaming.
-  watchdogProgressLabel.store("Render: ProcessDirtyDescriptorsForFrame", std::memory_order_relaxed);
-  ProcessDirtyDescriptorsForFrame(currentFrame);
-  watchdogProgressLabel.store("Render: after ProcessDirtyDescriptorsForFrame", std::memory_order_relaxed);
-
   // --- 1. PREPARATION PASS ---
   // Gather active entities with mesh resources, perform per-frame descriptor initialization,
   // and execute culling. This single pass replaces multiple redundant scans and reduces map lookups.
-  std::vector<RenderJob> opaqueJobs;
-  std::vector<RenderJob> transparentJobs;
+  std::vector<RenderJob>& opaqueJobs = frame.opaqueJobs;
+  std::vector<RenderJob>& transparentJobs = frame.transparentJobs;
+  opaqueJobs.clear();
+  transparentJobs.clear();
   opaqueJobs.reserve(entities.size());
 
   {
@@ -959,88 +1038,26 @@ void Renderer::Render(const std::vector<Entity *>& entities, CameraComponent* ca
     watchdogProgressLabel.store("Render: after deferred descriptor ops", std::memory_order_relaxed);
   }
 
-  // Acquire next swapchain image
-  // acquireNextImage returns imageIndex (which swapchain image is available).
-  // Use currentFrame to select an imageAvailableSemaphore for acquire.
-  // Use imageIndex to select renderFinishedSemaphore for present (ties semaphore to the specific image).
-  const uint32_t acquireSemaphoreIndex = currentFrame % static_cast<uint32_t>(imageAvailableSemaphores.size());
+  // Sort transparent entities back-to-front for correct blending of nested glass/liquids
+  if (!transparentJobs.empty()) {
+    glm::vec3 camPos = camera ? camera->GetPosition() : glm::vec3(0.0f);
+    std::ranges::stable_sort(transparentJobs,
+                      [camPos](const RenderJob& a, const RenderJob& b) {
+                        glm::vec3 pa = a.transformComp ? a.transformComp->GetPosition() : glm::vec3(0.0f);
+                        glm::vec3 pb = b.transformComp ? b.transformComp->GetPosition() : glm::vec3(0.0f);
+                        float da2 = glm::length2(pa - camPos);
+                        float db2 = glm::length2(pb - camPos);
+                        if (da2 != db2) return da2 > db2;
+                        if (a.entityRes->cachedIsLiquid != b.entityRes->cachedIsLiquid) return a.entityRes->cachedIsLiquid;
+                        return a.entity < b.entity;
+                      });
+  }
+}
 
-  uint32_t imageIndex;
-  vk::Result acquireResultCode = vk::Result::eSuccess;
-  // Helper overloads to normalize acquireNextImage return across Vulkan-Hpp versions
-  auto extractAcquire = [](auto const& ret, vk::Result& code, uint32_t& idx) {
-    using RetT = std::decay_t<decltype(ret)>;
-    if constexpr (std::is_same_v<RetT, vk::ResultValue<uint32_t>>) {
-      code = ret.result;
-      idx = ret.value;
-    } else {
-      // Assume older std::pair<vk::Result, uint32_t>
-      code = ret.first;
-      idx = ret.second;
-    }
-  };
-  try {
-    watchdogProgressLabel.store("Render: acquireNextImage", std::memory_order_relaxed);
-    auto acquireRet = swapChain.acquireNextImage(UINT64_MAX, *imageAvailableSemaphores[acquireSemaphoreIndex]);
-    // Vulkan-Hpp changed the return type of acquireNextImage for RAII swapchain across versions.
-    // Support both vk::ResultValue<uint32_t> (newer) and std::pair<vk::Result, uint32_t> (older).
-    extractAcquire(acquireRet, acquireResultCode, imageIndex);
-  } catch (const vk::OutOfDateKHRError&) {
-    watchdogProgressLabel.store("Render: acquireNextImage out-of-date", std::memory_order_relaxed);
-    // Swapchain is out of date (e.g., window resized) before we could
-    // query the result. Trigger recreation and exit this frame cleanly.
-    framebufferResized.store(true, std::memory_order_relaxed);
-    if (imguiSystem)
-      ImGui::EndFrame();
-    // IMPORTANT: We already reset the in-flight fence at the start of the frame.
-    // Because we're exiting early (no submit), signal it via an empty submit so
-    // swapchain recreation won't hang waiting for an unsignaled fence.
-    {
-      vk::SubmitInfo2 emptySubmit2{};
-      std::lock_guard<std::mutex> lock(queueMutex);
-      graphicsQueue.submit2(emptySubmit2, *inFlightFences[currentFrame]);
-    }
-    recreateSwapChain();
+// Frame call 3: the command buffer, the "Renderer" panel, the first pass with the cleared attachments
+void Renderer::BeginRendering(ImGuiSystem* imguiSystem) {
+  if (frame.skipped)
     return;
-  }
-
-  // imageIndex already populated above
-  watchdogProgressLabel.store("Render: acquired swapchain image", std::memory_order_relaxed);
-
-  bool isLoading = IsLoading();
-  bool flag = loadingFlag.load();
-  uint32_t critical = criticalJobsOutstanding.load();
-  bool initDone = initialLoadComplete.load();
-
-  if (acquireResultCode == vk::Result::eSuboptimalKHR || framebufferResized.load(std::memory_order_relaxed)) {
-    framebufferResized.store(false, std::memory_order_relaxed);
-    if (imguiSystem)
-      ImGui::EndFrame();
-    // Fence was reset earlier; ensure it is signaled before we bail out
-    // to avoid a deadlock in swapchain recreation.
-    {
-      vk::SubmitInfo2 emptySubmit2{};
-      std::lock_guard<std::mutex> lock(queueMutex);
-      graphicsQueue.submit2(emptySubmit2, *inFlightFences[currentFrame]);
-    }
-    recreateSwapChain();
-    return;
-  }
-  if (acquireResultCode != vk::Result::eSuccess) {
-    throw std::runtime_error("Failed to acquire swap chain image");
-  }
-
-  if (framebufferResized.load(std::memory_order_relaxed)) {
-    // Signal the fence via empty submit since no real work will be submitted
-    // this frame, preventing a wait on an unsignaled fence during resize.
-    {
-      vk::SubmitInfo2 emptySubmit2{};
-      std::lock_guard<std::mutex> lock(queueMutex);
-      graphicsQueue.submit2(emptySubmit2, *inFlightFences[currentFrame]);
-    }
-    recreateSwapChain();
-    return;
-  }
 
   // Ensure light buffers are sufficiently large before recording to avoid resizing while in use
   {
@@ -1069,13 +1086,11 @@ void Renderer::Render(const std::vector<Entity *>& entities, CameraComponent* ca
   if (framebufferResized.load(std::memory_order_relaxed)) {
     commandBuffers[currentFrame].end();
     recreateSwapChain();
+    frame.skipped = true;
     return;
   }
 
   // Process texture streaming uploads (see Renderer::ProcessPendingTextureJobs)
-
-  vk::raii::Pipeline* currentPipeline = nullptr;
-  vk::raii::PipelineLayout* currentLayout = nullptr;
 
   // Incrementally process pending texture uploads on the main thread so that
   // all Vulkan submits happen from a single place while worker threads only
@@ -1147,21 +1162,6 @@ void Renderer::Render(const std::vector<Entity *>& entities, CameraComponent* ca
 
   // Rasterization rendering
   {
-    // Sort transparent entities back-to-front for correct blending of nested glass/liquids
-    if (!transparentJobs.empty()) {
-      glm::vec3 camPos = camera ? camera->GetPosition() : glm::vec3(0.0f);
-      std::ranges::stable_sort(transparentJobs,
-                        [camPos](const RenderJob& a, const RenderJob& b) {
-                          glm::vec3 pa = a.transformComp ? a.transformComp->GetPosition() : glm::vec3(0.0f);
-                          glm::vec3 pb = b.transformComp ? b.transformComp->GetPosition() : glm::vec3(0.0f);
-                          float da2 = glm::length2(pa - camPos);
-                          float db2 = glm::length2(pb - camPos);
-                          if (da2 != db2) return da2 > db2;
-                          if (a.entityRes->cachedIsLiquid != b.entityRes->cachedIsLiquid) return a.entityRes->cachedIsLiquid;
-                          return a.entity < b.entity;
-                        });
-    }
-
     // PASS 1: RENDER OPAQUE OBJECTS TO OFF-SCREEN TEXTURE
     // Transition off-screen color to attachment write (Sync2). On first use after creation or after switching
     // from a mode that never produced this image, the layout may still be UNDEFINED.
@@ -1209,7 +1209,31 @@ void Renderer::Render(const std::vector<Entity *>& entities, CameraComponent* ca
     vk::Viewport viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f);
     commandBuffers[currentFrame].setViewport(0, viewport);
     vk::Rect2D scissor({0, 0}, swapChainExtent);
-    commandBuffers[currentFrame].setScissor(0, scissor); {
+    commandBuffers[currentFrame].setScissor(0, scissor);
+    // The transparent pass sets them again
+    frame.viewport = viewport;
+    frame.scissor = scissor;
+  }
+}
+
+// Frame call 4: the opaque draws, the composite pass, the transparent draws
+void Renderer::DrawScene() {
+  if (frame.skipped)
+    return;
+
+  // What the calls before left for this one
+  const uint32_t imageIndex = frame.imageIndex;
+  const std::vector<RenderJob>& opaqueJobs = frame.opaqueJobs;
+  const std::vector<RenderJob>& transparentJobs = frame.transparentJobs;
+  const vk::Viewport& viewport = frame.viewport;
+  const vk::Rect2D& scissor = frame.scissor;
+
+  vk::raii::Pipeline* currentPipeline = nullptr;
+  vk::raii::PipelineLayout* currentLayout = nullptr;
+
+  // Rasterization rendering
+  {
+    {
       uint32_t opaqueDrawsThisPass = 0;
       for (const auto& job : opaqueJobs) {
         vk::raii::Pipeline* selectedPipeline = nullptr;
@@ -1398,6 +1422,21 @@ void Renderer::Render(const std::vector<Entity *>& entities, CameraComponent* ca
           commandBuffers[currentFrame].drawIndexed(job.meshRes->indexCount, instanceCountT, 0, 0, 0);
         }
       }
+    }
+  }
+}
+
+// Frame call 5: the end of the transparent pass, the ImGui pass, the transition to present, the end of the command buffer
+void Renderer::EndRendering(ImGuiSystem* imguiSystem) {
+  if (frame.skipped)
+    return;
+
+  // What the calls before left for this one
+  const uint32_t imageIndex = frame.imageIndex;
+
+  // Rasterization rendering
+  {
+    {
       // End transparent rendering pass before any layout transitions (even if no transparent draws)
       commandBuffers[currentFrame].endRendering();
     } {
@@ -1488,6 +1527,32 @@ void Renderer::Render(const std::vector<Entity *>& entities, CameraComponent* ca
 
   commandBuffers[currentFrame].end();
   isRecordingCmd.store(false, std::memory_order_relaxed);
+}
+
+// Frame call 6: the submit, the present, the swap chain recreation when it is out of date, the next frame slot
+void Renderer::EndFrame(ImGuiSystem* imguiSystem) {
+  // Rendering is over with this call, whatever happens below (this used to be the guard of Render())
+  struct RenderingStateGuard {
+    MemoryPool* pool;
+    explicit RenderingStateGuard(MemoryPool* p) : pool(p) {
+    }
+    ~RenderingStateGuard() {
+      if (pool)
+        pool->setRenderingActive(false);
+    }
+  } guard(memoryPool.get());
+
+  if (frame.skipped) {
+    // The swap chain was recreated by the call that found it out of date and nothing was recorded.
+    // ImGui began its frame in Engine::Update(); end it, as the early returns of Render() did.
+    if (imguiSystem)
+      ImGui::EndFrame();
+    return;
+  }
+
+  // What the calls before left for this one
+  const uint32_t acquireSemaphoreIndex = frame.acquireSemaphoreIndex;
+  uint32_t imageIndex = frame.imageIndex;
 
   // Submit and present (Synchronization 2)
   uint64_t uploadsValueToWait = uploadTimelineLastSubmitted.load(std::memory_order_relaxed);

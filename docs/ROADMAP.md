@@ -17,7 +17,15 @@ shader and adds the light component; the student-facing interface starts with st
 step touches and its checks are in `docs/IMPLEMENTATION_PLAN.md`. Steps 1 to 7 are done and listed under "Done"; the
 remaining steps keep their numbers, because this file and the plan refer to them by number.
 
-8. `todo`, Rule 1: the frame calls. `Renderer::Render()` (about 870 lines) is split into `BeginFrame`, `UpdateScene`,
+8. `in progress` since 2026-09-22: part 8a (the cut of `Renderer::Render()` into the six parts, refactor only)
+   implemented and confirmed by the owner's run; part 8b implemented after the owner's approval of the diff:
+   `IsRunning()` and the six frame calls on the `Sandbox` with the order check ("Frame sequence error: X() was
+   called, Y() was expected. Rendering stopped."), `Engine::Run()` split into `IsRunning()` and six forwarders,
+   the loop in `sandbox.cpp`; `Run()` and `Render()` deleted at all levels. Extra approved by the owner: the first
+   `IsRunning()` refuses to start without an active camera. Open: the owner's run of 8b (normal run unchanged; a
+   removed or swapped frame call stops rendering with the error that names the expected call). Details:
+   `docs/IMPLEMENTATION_PLAN.md`, log: `docs/DELETIONS.md`.
+   Rule 1: the frame calls. `Renderer::Render()` (about 870 lines) is split into `BeginFrame`, `UpdateScene`,
    `BeginRendering`, `DrawScene`, `EndRendering` and `EndFrame` with the order check; `IsRunning()` and the loop move
    into `sandbox.cpp`. The riskiest step, therefore late: everything it moves is stable by then. Closes `lifecycle`.
 9. `todo`, Rule 1: terminal output. The start-up print of the initialisation chain, of the pipelines with their
@@ -247,7 +255,11 @@ is open. The names of calls and files (`IsRunning`, `AddToPipeline`, `CreateSphe
 ### Render loop
 
 - Six mandatory calls in a fixed order: `BeginFrame`, `UpdateScene`, `BeginRendering`, `DrawScene`, `EndRendering`,
-  `EndFrame`. A missing or misplaced call is reported by the next call, and rendering stops.
+  `EndFrame`. A missing or misplaced call is reported by the next call, and rendering stops. (Implemented with
+  planned change 8 on 2026-09-22; the exact content of each call is the table in `docs/ARCHITECTURE.md`, "One
+  frame". `IsRunning()` takes part in the check as well: it requires the previous frame to be complete, so a
+  forgotten `EndFrame()` is reported too. Approved extra: the first `IsRunning()` refuses to start without an
+  active camera.)
 - `DrawScene()` records the draw commands of every object in one call; there is no `Draw(object)` per object. The
   owner accepted this for `lifecycle` and amended the requirement text on 2026-09-21.
 - The engine's four passes (opaque to the off-screen image, composite, transparent, ImGui) stay inside these calls;
@@ -334,13 +346,16 @@ int main()
     // renders complete frames that show a progress bar instead of the scene.
     while (engine.IsRunning())
     {
-        engine.BeginFrame();     // wait for the GPU, acquire a swap chain image, begin the command buffer
-        engine.UpdateScene();    // camera controls, terminal commands, transforms to the uniform buffers
-        engine.BeginRendering(); // bind and clear the colour and depth attachments
-        engine.DrawScene();      // per object: bind its pipeline, descriptor sets and buffers, then draw
-        engine.EndRendering();   // the engine adds tone mapping and its own UI panel
+        engine.BeginFrame();     // wait for the GPU, acquire a swap chain image
+        engine.UpdateScene();    // camera controls, terminal commands, lights and transforms to the uniform buffers
+        engine.BeginRendering(); // begin the command buffer, clear the colour and depth attachments
+        engine.DrawScene();      // per object: bind its pipeline, descriptor sets and buffers, then draw; tone mapping
+        engine.EndRendering();   // the engine's own UI panel on top, end the command buffer
         engine.EndFrame();       // submit the command buffer, present the image
     }
+    // (Comments as implemented on 2026-09-22: the command buffer begins in BeginRendering, not BeginFrame, because
+    // the uniform-buffer and descriptor writes of UpdateScene have to precede the recording; tone mapping is the
+    // composite pass inside DrawScene, between the opaque and the transparent objects.)
 }
 ```
 

@@ -291,6 +291,47 @@ loop, a clean exit with code 0. The step is done. Log: `docs/DELETIONS.md`.
 Check: the normal run is unchanged; a removed or swapped call stops rendering with the error that names the expected
 call. Closes `lifecycle`.
 
+Status of 8a: implemented on 2026-09-22 after the owner approved the diff (515 lines over `renderer.h` and
+`renderer_rendering.cpp`, shown in the chat, test-compiled before). `Render()` calls the six new private-by-use
+public members in order; a `FrameInProgress frame` member holds what was local (`skipped`, `imageIndex`,
+`acquireSemaphoreIndex`, the two job lists, the pass-1 viewport and scissor); every part but the first begins with
+`if (frame.skipped) return;`. Every moved line is a tutorial line (checked with a whitespace-normalised,
+order-insensitive comparison of the old body with the six new ones: only the duplicate `ImGui::EndFrame()` of the
+two live skip paths, one `{` moved onto its own line and the two job-vector declarations changed). The cut differs
+from the table above in four points, each for a reason: `begin()` of the command buffer, the texture jobs and the
+"Renderer" panel are in `BeginRendering` (descriptor writes are deferred and the light-buffer rebind is skipped while
+`isRecordingCmd` is set, so everything `UpdateScene` writes has to come before recording; the panel stays where it
+was, before pass 1); the light list and the UBO template moved from the top of `Render()` into `UpdateScene`
+(in 8b they have to follow `Engine::Update()`, or the camera position and the lights would lag one frame; the light
+buffer of the slot is now written after the fence wait); the acquire moved in front of the preparation pass, the
+only real reorder (it touches only the swap chain and its semaphore, and on out-of-date the frame is skipped before
+any per-frame write); the transparent sort moved into `UpdateScene`. The two dead resize checks (after `begin()`,
+before the submit) became skips as well, and the skipped frame always ends ImGui's frame in `EndFrame()`. Release
+build: 0 errors, 0 warnings, ten files recompiled, nothing stale; the Debug link was blocked by the owner's running
+exe (LNK1168) and succeeded on the retry. The owner ran 8a on 2026-09-22: "it looks fine".
+
+Status of 8b: implemented on 2026-09-22 after the owner approved the diff (594 lines over seven files, shown in
+the chat, test-compiled before). `Engine::Run()` became `Engine::IsRunning()` (the head of its loop: window events,
+delta time, FPS title; false when the window closes) plus the six calls `BeginFrame()` to `EndFrame()`;
+`Engine::UpdateScene()` is the tutorial's `Update()` followed by the prologue of the old `Engine::Render()` (its
+guards, the entity-removal queue, the entity snapshot) and `renderer->UpdateScene()`, the other five forward to the
+renderer; every line of `Run()` and `Render()` moved (checked as for 8a; only the `while` / `break` / `Render()`
+scaffolding is gone). `Renderer::Render()` (both overloads), `Engine::Run()`, `Engine::Render()` and
+`Sandbox::Run()` are deleted. The `Sandbox` has `IsRunning()` and the six frame calls; `sandbox_impl.cpp` keeps the
+call that is expected next: a call out of order prints `Frame sequence error: <call>() was called, <expected>() was
+expected. Rendering stopped.`, after which every frame call does nothing and `IsRunning()` is false, so the loop
+ends and the program exits normally (`IsRunning()` itself requires the previous frame to be complete, which catches
+a forgotten `EndFrame()`); an exception inside a frame call is printed (`Exception: ...`) and stops rendering, as
+the old `Run()` did. The first `IsRunning()` does the one-time work of the old `Run()` (the chain check, the end of
+the load cycle when no model was loaded, the terminal reader) and, beyond the plan and approved by the owner,
+refuses to start without an active camera (the tutorial's `Render()` would return early every frame and ImGui would
+assert in Debug). `main()` in `sandbox.cpp` is the eight initialization calls, `SetupScene()` and the loop
+`while (IsRunning()) { the six calls }`. Consequence of the new order: `Engine::Update()` (camera controls, ImGui
+`NewFrame`) runs after `BeginFrame()`'s acquire instead of before it, which is why 8a moved the light list and the
+UBO template into `UpdateScene`. Debug and Release builds: 0 errors, 0 warnings, eleven files recompiled, nothing
+stale. Open: the owner's run (the normal run unchanged; one frame call removed or two swapped stops rendering with
+the error that names the expected call).
+
 ## Step 9: terminal output (Rule 1, S)
 
 1. Printers for the initialisation chain, for one pipeline (stages, the four settings marked as the student's, its

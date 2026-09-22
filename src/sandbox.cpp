@@ -68,8 +68,18 @@ int main()
 	// Set up the scene
 	SetupScene(sandbox);
 
-	// Run the engine
-	sandbox.Run();
+	// The render loop: six calls per frame in this order, until the window is closed. A call that is
+	// missing or out of order is reported by the next one, and rendering stops. The engine's loading
+	// overlay covers the first frames while the meshes and textures are uploaded.
+	while (sandbox.IsRunning())
+	{
+		sandbox.BeginFrame();        // wait until the GPU is done with this frame slot, acquire a swap chain image
+		sandbox.UpdateScene();       // camera controls, terminal commands, lights and transforms into the uniform buffers
+		sandbox.BeginRendering();    // begin the command buffer, clear the color and depth attachments
+		sandbox.DrawScene();         // per object: bind its pipeline, descriptor sets and buffers, then draw
+		sandbox.EndRendering();      // the engine's UI on top, end the command buffer
+		sandbox.EndFrame();          // submit the command buffer, present the image
+	}
 
 	return 0;
 }

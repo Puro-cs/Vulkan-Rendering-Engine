@@ -112,10 +112,45 @@ class Engine
 	 */
 	bool CreateSyncObjects();
 
+	// The render loop: Run() as the loop condition plus six frame calls, to be made in this order once
+	// per frame. The sandbox layer checks the order.
+
 	/**
-	 * @brief Run the main game loop.
+	 * @brief The loop condition: process the window events, compute the delta time, update the FPS title.
+	 * @return True until the window is closed.
 	 */
-	void Run();
+	bool IsRunning();
+
+	/**
+	 * @brief Frame call 1: wait for the GPU, acquire a swap chain image.
+	 */
+	void BeginFrame();
+
+	/**
+	 * @brief Frame call 2: update the engine (camera controls, ImGui frame, entity updates), then the
+	 * renderer's scene update with a snapshot of the entities (lights, uniform buffers, culling, render jobs).
+	 */
+	void UpdateScene();
+
+	/**
+	 * @brief Frame call 3: begin the command buffer and the first pass with cleared attachments.
+	 */
+	void BeginRendering();
+
+	/**
+	 * @brief Frame call 4: draw every object.
+	 */
+	void DrawScene();
+
+	/**
+	 * @brief Frame call 5: end the passes, draw the ImGui overlay, end the command buffer.
+	 */
+	void EndRendering();
+
+	/**
+	 * @brief Frame call 6: submit and present.
+	 */
+	void EndFrame();
 
 	/**
 	 * @brief Clean up engine resources.
@@ -307,11 +342,6 @@ class Engine
 	 */
 	// Accepts a time delta in milliseconds for clarity
 	void Update(TimeDelta deltaTime);
-
-	/**
-	 * @brief Render the scene.
-	 */
-	void Render();
 
 	/**
 	 * @brief Calculate the time delta between frames.

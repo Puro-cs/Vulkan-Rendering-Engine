@@ -58,13 +58,19 @@ Studio, the console window that opens with the exe is the terminal to type in.
 
 Start-up (planned change 7, since 2026-09-22): `main()` in `src/sandbox.cpp` initializes the engine with eight calls
 in a fixed order (`InitializeWindow`, `CreateInstance`, `PickDevice`, `CreateSwapChain`, `InitializeRendering`,
-`CreatePipelines`, `CreateCommandBuffers`, `CreateSyncObjects`), then `SetupScene()` and `Run()`. A call that is
-removed, swapped or repeated is reported on stderr by name (`Initialization error: InitializeRendering() was called,
-but CreateSwapChain() has not been done. ...`), the scene calls that need the engine report the same, and `Run()`
-returns without opening the render loop; the process ends normally. The log lines of the set-up steps are the
-tutorial's, in the same order except that "Creating depth resources" and "Creating opaque scene color resources" now
-come before "Creating PBR pipeline" (they belong to `InitializeRendering`), and the first line
-`Renderer::Initialize start` is gone.
+`CreatePipelines`, `CreateCommandBuffers`, `CreateSyncObjects`), then `SetupScene()`, then the render loop. A call
+that is removed, swapped or repeated is reported on stderr by name (`Initialization error: InitializeRendering() was
+called, but CreateSwapChain() has not been done. ...`), the scene calls that need the engine report the same, and the
+loop never starts; the process ends normally. The log lines of the set-up steps are the tutorial's, in the same
+order except that "Creating depth resources" and "Creating opaque scene color resources" now come before "Creating
+PBR pipeline" (they belong to `InitializeRendering`), and the first line `Renderer::Initialize start` is gone.
+
+The render loop (planned change 8, since 2026-09-22): `while (sandbox.IsRunning()) { BeginFrame(); UpdateScene();
+BeginRendering(); DrawScene(); EndRendering(); EndFrame(); }` in `main()`. A frame call that is removed or out of
+order is reported once on stderr (`Frame sequence error: DrawScene() was called, BeginRendering() was expected.
+Rendering stopped.`); the loop then ends and the process exits normally, without a crash dump. A forgotten
+`EndFrame()` is reported by the next `IsRunning()`. A `SetupScene()` without `SetActiveCamera()` is reported by the
+first `IsRunning()` (`IsRunning(): there is no active camera. ...`) and the loop never starts.
 
 The engine renders with one forward rasterization path (ray query,
 Forward+ and planar reflections were removed on 2026-09-20 / 2026-09-21) and one mesh shader, `pbr.slang` (the basic

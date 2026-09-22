@@ -56,6 +56,21 @@ static const char *const INITIALIZATION_CALL_NAMES[InitializationCallCount] = {
     "InitializeWindow", "CreateInstance", "PickDevice", "CreateSwapChain",
     "InitializeRendering", "CreatePipelines", "CreateCommandBuffers", "CreateSyncObjects"};
 
+// The frame calls of the render loop, in the order in which they have to be made once per frame
+enum FrameCall
+{
+	BeginFrameCall,
+	UpdateSceneCall,
+	BeginRenderingCall,
+	DrawSceneCall,
+	EndRenderingCall,
+	EndFrameCall,
+	FrameCallCount
+};
+
+static const char *const FRAME_CALL_NAMES[FrameCallCount] = {
+    "BeginFrame", "UpdateScene", "BeginRendering", "DrawScene", "EndRendering", "EndFrame"};
+
 /**
  * @brief The hidden part of the Sandbox: the engine and the objects that were handed out.
  */
@@ -77,6 +92,15 @@ struct Sandbox::Impl
 
 	bool RequireInitialization(const char *caller, int callCount);
 	bool InitializationCall(int call, const std::function<bool()> &work);
+
+	// The render loop: whether the first IsRunning() has done its one-time work, the frame call that
+	// is expected next, and whether rendering was stopped by a frame call out of order or an error
+	bool loopStarted      = false;
+	int  expectedCall     = BeginFrameCall;
+	bool renderingStopped = false;
+
+	bool FrameSequenceError(const char *caller);
+	void FrameCall(int call, const std::function<void()> &work);
 
 	// The commands that are typed into the terminal while the engine renders
 	TerminalCommands terminalCommands;
@@ -539,22 +563,68 @@ bool Sandbox::CreateSyncObjects()
 	return impl->InitializationCall(CreateSyncObjectsCall, [this] { return impl->engine.CreateSyncObjects(); });
 }
 
-void Sandbox::Run()
+// --- The render loop ---
+
+// Reports a frame call that was made out of order and stops rendering: IsRunning() is false from now on
+bool Sandbox::Impl::FrameSequenceError(const char *caller)
 {
-	if (!impl->RequireInitialization("Run", InitializationCallCount))
+	std::cerr << "Frame sequence error: " << caller << "() was called, " << FRAME_CALL_NAMES[expectedCall] << "() was expected. Rendering stopped." << std::endl;
+	renderingStopped = true;
+	return false;
+}
+
+// One frame call: the order check, then the work of the engine. After the last call of a frame the
+// first one is expected again.
+void Sandbox::Impl::FrameCall(int call, const std::function<void()> &work)
+{
+	if (renderingStopped)
 	{
+		return;
+	}
+	if (call != expectedCall)
+	{
+		FrameSequenceError(FRAME_CALL_NAMES[call]);
 		return;
 	}
 	try
 	{
+		work();
+	}
+	catch (const std::exception &e)
+	{
+		std::cerr << "Exception: " << e.what() << std::endl;
+		renderingStopped = true;
+		return;
+	}
+	expectedCall = (call + 1) % FrameCallCount;
+}
+
+bool Sandbox::IsRunning()
+{
+	if (impl->renderingStopped)
+	{
+		return false;
+	}
+
+	// The first call: what has to be there before the first frame
+	if (!impl->loopStarted)
+	{
+		if (!impl->RequireInitialization("IsRunning", InitializationCallCount))
+		{
+			return false;
+		}
+		if (!impl->engine.GetActiveCamera())
+		{
+			std::cerr << "IsRunning(): there is no active camera. Create one with CreateCamera() and pass it to SetActiveCamera() in SetupScene()." << std::endl;
+			return false;
+		}
+		impl->loopStarted = true;
+
 		// The engine shows its loading overlay until a load cycle has ended. A scene without a
 		// loaded model never starts one, so end it here.
 		if (!impl->modelLoaded)
 		{
-			if (auto *renderer = impl->engine.GetRenderer())
-			{
-				renderer->SetLoading(false);
-			}
+			impl->engine.GetRenderer()->SetLoading(false);
 		}
 
 		// Terminal commands such as Room.Move(1, 0, 0): a reader thread collects the lines that are
@@ -562,14 +632,54 @@ void Sandbox::Run()
 		Entity *terminalEntity = impl->engine.CreateEntity("TerminalCommands");
 		terminalEntity->AddComponent<TerminalCommandComponent>([this] { impl->ApplyTerminalCommands(); });
 		impl->terminalCommands.Start();
+	}
 
-		// Run the engine
-		impl->engine.Run();
+	// The previous frame has to be complete
+	if (impl->expectedCall != BeginFrameCall)
+	{
+		return impl->FrameSequenceError("IsRunning");
+	}
+
+	try
+	{
+		return impl->engine.IsRunning();
 	}
 	catch (const std::exception &e)
 	{
 		std::cerr << "Exception: " << e.what() << std::endl;
+		impl->renderingStopped = true;
+		return false;
 	}
+}
+
+void Sandbox::BeginFrame()
+{
+	impl->FrameCall(BeginFrameCall, [this] { impl->engine.BeginFrame(); });
+}
+
+void Sandbox::UpdateScene()
+{
+	impl->FrameCall(UpdateSceneCall, [this] { impl->engine.UpdateScene(); });
+}
+
+void Sandbox::BeginRendering()
+{
+	impl->FrameCall(BeginRenderingCall, [this] { impl->engine.BeginRendering(); });
+}
+
+void Sandbox::DrawScene()
+{
+	impl->FrameCall(DrawSceneCall, [this] { impl->engine.DrawScene(); });
+}
+
+void Sandbox::EndRendering()
+{
+	impl->FrameCall(EndRenderingCall, [this] { impl->engine.EndRendering(); });
+}
+
+void Sandbox::EndFrame()
+{
+	impl->FrameCall(EndFrameCall, [this] { impl->engine.EndFrame(); });
 }
 
 Camera *Sandbox::CreateCamera(const std::string &name)

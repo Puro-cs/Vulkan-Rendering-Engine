@@ -201,8 +201,11 @@ class Light
  * Every group of Vulkan steps is one call. The engine is initialized by the eight calls of the
  * initialization chain, in the order in which they are declared below; a call that is made out of
  * order, twice, or without the calls before it, reports the error and does nothing. All scene objects
- * are created in SetupScene(), after the chain and before rendering starts. The objects that the
- * Create... and Load... calls return belong to the engine; they stay valid until the Sandbox is destroyed.
+ * are created in SetupScene(), after the chain and before rendering starts. The render loop is
+ * `while (IsRunning())` around the six frame calls, in the order in which they are declared below; a
+ * frame call that is missing or out of order is reported by the next call, and rendering stops. The
+ * objects that the Create... and Load... calls return belong to the engine; they stay valid until the
+ * Sandbox is destroyed.
  */
 class Sandbox
 {
@@ -277,12 +280,47 @@ class Sandbox
 	 */
 	bool CreateSyncObjects();
 
-	// --- Rendering ---
+	// --- The render loop: while (IsRunning()) { the six frame calls in this order } ---
 
 	/**
-	 * @brief Render until the window is closed. Needs the complete initialization chain.
+	 * @brief The loop condition: true until the window is closed. Needs the complete initialization
+	 * chain and an active camera. Processes the window events and the frame time of the coming frame.
+	 * @return True while the window is open, false when it was closed or when rendering stopped after
+	 *         a frame call was made out of order.
 	 */
-	void Run();
+	bool IsRunning();
+
+	/**
+	 * @brief Frame call 1: wait until the GPU is done with this frame slot, acquire a swap chain image.
+	 */
+	void BeginFrame();
+
+	/**
+	 * @brief Frame call 2: camera controls, terminal commands, the lights and the transforms of all
+	 * objects into the uniform buffers.
+	 */
+	void UpdateScene();
+
+	/**
+	 * @brief Frame call 3: begin the command buffer, clear the color and depth attachments.
+	 */
+	void BeginRendering();
+
+	/**
+	 * @brief Frame call 4: per object, bind its pipeline, descriptor sets and buffers, then draw; the
+	 * tone mapping of the opaque scene; the transparent objects on top.
+	 */
+	void DrawScene();
+
+	/**
+	 * @brief Frame call 5: the engine's UI on top, end the command buffer.
+	 */
+	void EndRendering();
+
+	/**
+	 * @brief Frame call 6: submit the command buffer, present the image.
+	 */
+	void EndFrame();
 
 	// --- The scene: called in SetupScene(), after the initialization chain ---
 
