@@ -112,6 +112,10 @@ Forcing completion to avoid deadlock.` is the normal end of loading: the `Loadin
 Six blank lines after `Features queried successfully` come from the two-statement `LOGW` macro used under an
 unbraced `if` (tutorial code). When stdin is redirected from a file or closed (as in the capture command above),
 the terminal reader thread of planned change 6 reads end-of-file at once and ends; nothing is printed for that.
+Since planned change 9 (2026-09-22) the first `IsRunning()` prints the initialization chain, the pipelines with
+their objects and the frame sequence to stdout, after the start-up log and before the first frame
+(`docs/ARCHITECTURE.md`, "Terminal output"); an initialization error or a frame sequence error prints its view to
+stderr, under the error line.
 
 After a shader file is added or deleted, run `cmake --preset windows-msvc` again: the `*.slang` list is a configure-time
 glob, and a build tree that still lists a deleted shader fails in the `shaders` target.

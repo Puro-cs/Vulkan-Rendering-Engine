@@ -24,8 +24,12 @@
 #include "terminal_commands.h"
 #include "transform_component.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <filesystem>
 #include <functional>
+#include <iomanip>
 #include <iostream>
 
 // This file implements what sandbox.h declares. It is the only place where the classes of the
@@ -56,6 +60,17 @@ static const char *const INITIALIZATION_CALL_NAMES[InitializationCallCount] = {
     "InitializeWindow", "CreateInstance", "PickDevice", "CreateSwapChain",
     "InitializeRendering", "CreatePipelines", "CreateCommandBuffers", "CreateSyncObjects"};
 
+// What each call does, for the terminal output
+static const char *const INITIALIZATION_CALL_DESCRIPTIONS[InitializationCallCount] = {
+    "the window and its input callbacks",
+    "Vulkan instance, debug messenger, window surface",
+    "GPU, logical device with its queues, memory pool",
+    "swap chain and its image views",
+    "dynamic rendering, depth image, off-screen color image",
+    "the engine's pipelines, descriptor set layouts, light buffers",
+    "command pool, descriptor pool, default textures, command buffers",
+    "semaphores and fences, worker threads, model loader, UI"};
+
 // The frame calls of the render loop, in the order in which they have to be made once per frame
 enum FrameCall
 {
@@ -70,6 +85,28 @@ enum FrameCall
 
 static const char *const FRAME_CALL_NAMES[FrameCallCount] = {
     "BeginFrame", "UpdateScene", "BeginRendering", "DrawScene", "EndRendering", "EndFrame"};
+
+// What each call does, for the terminal output
+static const char *const FRAME_CALL_DESCRIPTIONS[FrameCallCount] = {
+    "wait for the GPU, acquire a swap chain image",
+    "camera controls, terminal commands, scene data -> uniform buffers",
+    "begin the command buffer, clear the color and depth attachments",
+    "per object: bind pipeline, descriptor sets, buffers, draw",
+    "the engine's UI on top, end the command buffer",
+    "submit the command buffer, present the image"};
+
+/**
+ * @brief A pipeline as the terminal output shows it: the engine's "pbr" or one created with
+ * CreatePipeline(), with the names of the objects that were added to it.
+ */
+struct PipelineView
+{
+	std::string              name;
+	std::string              shaderFile;
+	PipelineSettings         settings;
+	bool                     engine = false;        // "pbr": its settings are the engine's, not the student's
+	std::vector<std::string> objects;
+};
 
 /**
  * @brief The hidden part of the Sandbox: the engine and the objects that were handed out.
@@ -101,6 +138,16 @@ struct Sandbox::Impl
 
 	bool FrameSequenceError(const char *caller);
 	void FrameCall(int call, const std::function<void()> &work);
+
+	// The terminal output: the pipelines in the order in which they are printed ("pbr" first), and the
+	// three views (the chain, every pipeline with its objects, the frame sequence)
+	std::vector<PipelineView> pipelineViews;
+
+	void PrintInitializationChain(std::ostream &out, int markedCall, const char *reason) const;
+	void ReportInitializationChain(int markedCall, const char *reason);
+	void PrintPipelines(std::ostream &out) const;
+	void PrintFrameSequence(std::ostream &out, int markedCall, const char *reason) const;
+	void PrintOverview(std::ostream &out) const;
 
 	// The commands that are typed into the terminal while the engine renders
 	TerminalCommands terminalCommands;
@@ -229,17 +276,20 @@ void SceneObject::Scale(const glm::vec3 &factors)
 
 SceneObject *SceneObject::Part(const std::string &materialName)
 {
+	// A part is named after the object and the material, e.g. "Room.wood"
+	const std::string partName = name + "." + materialName;
+
 	// A part that was asked for before
 	for (const auto &part : parts)
 	{
-		if (part->name == materialName)
+		if (part->name == partName)
 		{
 			return part.get();
 		}
 	}
 
 	auto part  = std::make_unique<SceneObject>();
-	part->name = materialName;
+	part->name = partName;
 	for (Entity *entity : entities)
 	{
 		if (MaterialNameOf(entity) == materialName)
@@ -449,6 +499,168 @@ void Sandbox::Impl::ApplyTerminalCommands()
 	}
 }
 
+// --- Terminal output ---
+
+// One list of calls, in the form of the roadmap:
+//   [ok] CreateSwapChain       swap chain and its image views
+//   [!!] InitializeRendering   <- missing
+//   [  ] CreatePipelines       the engine's pipelines, descriptor set layouts, light buffers
+// The first `doneCount` calls are done, `markedCall` is the call the error is about (-1: none).
+static void PrintCallList(std::ostream &out, const char *const *names, const char *const *descriptions, int count, int doneCount, int markedCall, const char *reason)
+{
+	size_t nameWidth = 0;
+	for (int call = 0; call < count; ++call)
+	{
+		nameWidth = std::max(nameWidth, std::strlen(names[call]));
+	}
+	for (int call = 0; call < count; ++call)
+	{
+		const char *mark = (call == markedCall) ? "[!!]" : (call < doneCount ? "[ok]" : "[  ]");
+		out << "  " << mark << " " << std::left << std::setw(static_cast<int>(nameWidth) + 2) << names[call];
+		if (call == markedCall)
+		{
+			out << "<- " << reason;
+		}
+		else
+		{
+			out << descriptions[call];
+		}
+		out << std::endl;
+	}
+}
+
+// One pipeline, in the form of the roadmap: the stages from the vertex input to the attachments, which
+// of them the student sets ("yours") and which the engine fixes, and the objects the pipeline draws
+static void PrintPipeline(std::ostream &out, const PipelineView &pipeline, const std::vector<std::string> &objects)
+{
+	// The build compiles "shaders/x.slang" to "shaders/x.spv", the file the engine loads
+	const std::string spvFile = std::filesystem::path(pipeline.shaderFile).replace_extension(".spv").generic_string();
+	out << "Pipeline \"" << pipeline.name << "\"    " << pipeline.shaderFile << " -> " << spvFile << std::endl;
+	out << std::endl;
+
+	// The four settings of the student; the engine's own pipeline has none
+	const char *yours    = pipeline.engine ? "fixed" : "yours";
+	const char *cullMode = "none";
+	switch (pipeline.settings.cullMode)
+	{
+		case CullMode::None:
+			cullMode = "none";
+			break;
+		case CullMode::Front:
+			cullMode = "front";
+			break;
+		case CullMode::Back:
+			cullMode = "back";
+			break;
+	}
+	const char *depthTest   = !pipeline.settings.depthTest ? "off" : (pipeline.settings.blending ? "on, no depth writes" : "on, writes depth");
+	const char *blending    = pipeline.settings.blending ? "on, drawn in the transparent pass" : (pipeline.engine ? "off (on for blended materials)" : "off");
+	const char *attachments = pipeline.settings.blending ? "swap chain image + depth image" : "off-screen color image + depth image";
+
+	const auto stage = [&out](const char *name, const std::string &description, const char *who) {
+		out << "  " << std::left << std::setw(19) << name << std::setw(43) << description << who << std::endl;
+	};
+	const auto connector = [&out]() { out << "        |" << std::endl; };
+	stage("Input assembly", "triangle list, engine vertex layout", "fixed");
+	connector();
+	stage("Vertex shader", "VSMain", yours);
+	connector();
+	stage("Rasterization", std::string("cull mode: ") + cullMode, yours);
+	connector();
+	stage("Fragment shader", "PSMain", yours);
+	connector();
+	stage("Depth test", depthTest, yours);
+	connector();
+	stage("Color blending", blending, yours);
+	connector();
+	stage("Attachments", attachments, "fixed");
+	out << std::endl;
+
+	out << "  " << std::left << std::setw(19) << "Objects";
+	if (objects.empty())
+	{
+		out << "none";
+	}
+	const char *separator = "";
+	for (const std::string &object : objects)
+	{
+		out << separator << object;
+		separator = ", ";
+	}
+	out << std::endl;
+}
+
+void Sandbox::Impl::PrintInitializationChain(std::ostream &out, int markedCall, const char *reason) const
+{
+	// The done flags are a prefix of the chain: a call needs the calls in front of it
+	int doneCount = 0;
+	while (doneCount < InitializationCallCount && initializationDone[doneCount])
+	{
+		++doneCount;
+	}
+	PrintCallList(out, INITIALIZATION_CALL_NAMES, INITIALIZATION_CALL_DESCRIPTIONS, InitializationCallCount, doneCount, markedCall, reason);
+}
+
+// The view of the chain after an initialization error, printed with the first error only
+void Sandbox::Impl::ReportInitializationChain(int markedCall, const char *reason)
+{
+	if (initializationOrderPrinted)
+	{
+		return;
+	}
+	initializationOrderPrinted = true;
+	std::cerr << std::endl;
+	PrintInitializationChain(std::cerr, markedCall, reason);
+	std::cerr << std::endl;
+}
+
+void Sandbox::Impl::PrintPipelines(std::ostream &out) const
+{
+	for (const PipelineView &pipeline : pipelineViews)
+	{
+		std::vector<std::string> objectNames = pipeline.objects;
+		if (pipeline.engine)
+		{
+			// An object that was added to no pipeline is drawn with "pbr"
+			for (const auto &object : objects)
+			{
+				bool added = false;
+				for (const PipelineView &other : pipelineViews)
+				{
+					added = added || std::find(other.objects.begin(), other.objects.end(), object->name) != other.objects.end();
+				}
+				if (!added)
+				{
+					objectNames.push_back(object->name);
+				}
+			}
+		}
+		PrintPipeline(out, pipeline, objectNames);
+		out << std::endl;
+	}
+}
+
+void Sandbox::Impl::PrintFrameSequence(std::ostream &out, int markedCall, const char *reason) const
+{
+	// The calls in front of the expected one are done in this frame
+	PrintCallList(out, FRAME_CALL_NAMES, FRAME_CALL_DESCRIPTIONS, FrameCallCount, expectedCall, markedCall, reason);
+}
+
+// The start-up print: the chain, every pipeline with its objects, the frame sequence
+void Sandbox::Impl::PrintOverview(std::ostream &out) const
+{
+	out << std::endl;
+	out << "Initialization chain (eight calls, in this order):" << std::endl;
+	out << std::endl;
+	PrintInitializationChain(out, -1, "");
+	out << std::endl;
+	PrintPipelines(out);
+	out << "Frame sequence (six calls per frame, in this order):" << std::endl;
+	out << std::endl;
+	PrintFrameSequence(out, -1, "");
+	out << std::endl;
+}
+
 // --- The initialization chain ---
 
 // Checks that the first `callCount` calls of the chain are done and reports the first one that is not.
@@ -461,18 +673,8 @@ bool Sandbox::Impl::RequireInitialization(const char *caller, int callCount)
 		{
 			continue;
 		}
-		std::cerr << "Initialization error: " << caller << "() was called, but " << INITIALIZATION_CALL_NAMES[call] << "() has not been done.";
-		// The order is printed with the first error only
-		if (!initializationOrderPrinted)
-		{
-			initializationOrderPrinted = true;
-			std::cerr << " The initialization calls, in order:";
-			for (const char *name : INITIALIZATION_CALL_NAMES)
-			{
-				std::cerr << " " << name << "()";
-			}
-		}
-		std::cerr << std::endl;
+		std::cerr << "Initialization error: " << caller << "() was called, but " << INITIALIZATION_CALL_NAMES[call] << "() has not been done." << std::endl;
+		ReportInitializationChain(call, "missing");
 		return false;
 	}
 	return true;
@@ -484,6 +686,7 @@ bool Sandbox::Impl::InitializationCall(int call, const std::function<bool()> &wo
 	if (initializationDone[call])
 	{
 		std::cerr << "Initialization error: " << INITIALIZATION_CALL_NAMES[call] << "() was called twice." << std::endl;
+		ReportInitializationChain(call, "called twice");
 		return false;
 	}
 	if (!RequireInitialization(INITIALIZATION_CALL_NAMES[call], call))
@@ -495,12 +698,14 @@ bool Sandbox::Impl::InitializationCall(int call, const std::function<bool()> &wo
 		if (!work())
 		{
 			std::cerr << INITIALIZATION_CALL_NAMES[call] << "() failed." << std::endl;
+			ReportInitializationChain(call, "failed");
 			return false;
 		}
 	}
 	catch (const std::exception &e)
 	{
 		std::cerr << INITIALIZATION_CALL_NAMES[call] << "() failed: " << e.what() << std::endl;
+		ReportInitializationChain(call, "failed");
 		return false;
 	}
 	initializationDone[call] = true;
@@ -550,7 +755,14 @@ bool Sandbox::InitializeRendering()
 
 bool Sandbox::CreatePipelines()
 {
-	return impl->InitializationCall(CreatePipelinesCall, [this] { return impl->engine.CreatePipelines(); });
+	if (!impl->InitializationCall(CreatePipelinesCall, [this] { return impl->engine.CreatePipelines(); }))
+	{
+		return false;
+	}
+	// For the terminal output: the engine's pipeline, the default of every object, with the shader
+	// and the settings of the opaque PBR pipeline (Renderer::createPBRPipeline)
+	impl->pipelineViews.push_back({"pbr", "shaders/pbr.slang", PipelineSettings{CullMode::Back, true, false}, true, {}});
+	return true;
 }
 
 bool Sandbox::CreateCommandBuffers()
@@ -569,6 +781,9 @@ bool Sandbox::CreateSyncObjects()
 bool Sandbox::Impl::FrameSequenceError(const char *caller)
 {
 	std::cerr << "Frame sequence error: " << caller << "() was called, " << FRAME_CALL_NAMES[expectedCall] << "() was expected. Rendering stopped." << std::endl;
+	std::cerr << std::endl;
+	PrintFrameSequence(std::cerr, expectedCall, "missing");
+	std::cerr << std::endl;
 	renderingStopped = true;
 	return false;
 }
@@ -593,6 +808,9 @@ void Sandbox::Impl::FrameCall(int call, const std::function<void()> &work)
 	catch (const std::exception &e)
 	{
 		std::cerr << "Exception: " << e.what() << std::endl;
+		std::cerr << std::endl;
+		PrintFrameSequence(std::cerr, call, "failed");
+		std::cerr << std::endl;
 		renderingStopped = true;
 		return;
 	}
@@ -632,6 +850,10 @@ bool Sandbox::IsRunning()
 		Entity *terminalEntity = impl->engine.CreateEntity("TerminalCommands");
 		terminalEntity->AddComponent<TerminalCommandComponent>([this] { impl->ApplyTerminalCommands(); });
 		impl->terminalCommands.Start();
+
+		// The terminal output: the chain, every pipeline with its objects and the frame sequence,
+		// once, after the start-up log and before the first frame
+		impl->PrintOverview(std::cout);
 	}
 
 	// The previous frame has to be complete
@@ -813,7 +1035,13 @@ bool Sandbox::CreatePipeline(const std::string &name, const std::string &shaderF
 	{
 		return false;
 	}
-	return impl->engine.GetRenderer()->CreatePipeline(name, shaderFile, settings);
+	if (!impl->engine.GetRenderer()->CreatePipeline(name, shaderFile, settings))
+	{
+		return false;
+	}
+	// For the terminal output
+	impl->pipelineViews.push_back({name, shaderFile, settings, false, {}});
+	return true;
 }
 
 bool Sandbox::AddToPipeline(const std::string &name, SceneObject *object)
@@ -829,6 +1057,14 @@ bool Sandbox::AddToPipeline(const std::string &name, SceneObject *object)
 		if (!renderer->AddToPipeline(name, entity))
 		{
 			return false;
+		}
+	}
+	// For the terminal output: the object under its pipeline, once
+	for (PipelineView &pipeline : impl->pipelineViews)
+	{
+		if (pipeline.name == name && std::find(pipeline.objects.begin(), pipeline.objects.end(), object->name) == pipeline.objects.end())
+		{
+			pipeline.objects.push_back(object->name);
 		}
 	}
 	return true;

@@ -285,6 +285,8 @@ class Sandbox
 	/**
 	 * @brief The loop condition: true until the window is closed. Needs the complete initialization
 	 * chain and an active camera. Processes the window events and the frame time of the coming frame.
+	 * The first call prints the initialization chain, every pipeline with its objects and the frame
+	 * sequence to the terminal.
 	 * @return True while the window is open, false when it was closed or when rendering stopped after
 	 *         a frame call was made out of order.
 	 */

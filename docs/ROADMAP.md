@@ -14,21 +14,18 @@ The owner approved this order on 2026-09-21. Implementation started the same day
 that step is implemented. The target is the student-facing interface at the end of this file. Logging, builds and
 runs follow `docs/WORKFLOW.md`. Steps 1 and 2 only delete code (step 2 also adds the template shader); step 3 swaps a
 shader and adds the light component; the student-facing interface starts with step 4. The sub-steps, the code each
-step touches and its checks are in `docs/IMPLEMENTATION_PLAN.md`. Steps 1 to 7 are done and listed under "Done"; the
+step touches and its checks are in `docs/IMPLEMENTATION_PLAN.md`. Steps 1 to 8 are done and listed under "Done"; the
 remaining steps keep their numbers, because this file and the plan refer to them by number.
 
-8. `in progress` since 2026-09-22: part 8a (the cut of `Renderer::Render()` into the six parts, refactor only)
-   implemented and confirmed by the owner's run; part 8b implemented after the owner's approval of the diff:
-   `IsRunning()` and the six frame calls on the `Sandbox` with the order check ("Frame sequence error: X() was
-   called, Y() was expected. Rendering stopped."), `Engine::Run()` split into `IsRunning()` and six forwarders,
-   the loop in `sandbox.cpp`; `Run()` and `Render()` deleted at all levels. Extra approved by the owner: the first
-   `IsRunning()` refuses to start without an active camera. Open: the owner's run of 8b (normal run unchanged; a
-   removed or swapped frame call stops rendering with the error that names the expected call). Details:
+9. `in progress` since 2026-09-22: implemented after the owner approved the diff (254 added, 16 removed lines over
+   `sandbox.h` and `sandbox_impl.cpp`, test-compiled before): the first `IsRunning()` prints the initialisation chain
+   (`[ok]` per call, with what the call does), every pipeline in the form below with its objects, and the frame
+   sequence; the error paths of planned changes 7 and 8 print the same list on stderr with the failed call marked
+   (`[!!] PickDevice            <- missing`, `<- called twice`, `<- failed`). Decisions of the owner in the approval
+   dialog: a part is named `Room.wood` (two lines in `Part()`), the box column is printed at start-up too. Open: the
+   owner's run (the start-up print, a skipped initialisation call, a skipped frame call). Details:
    `docs/IMPLEMENTATION_PLAN.md`, log: `docs/DELETIONS.md`.
-   Rule 1: the frame calls. `Renderer::Render()` (about 870 lines) is split into `BeginFrame`, `UpdateScene`,
-   `BeginRendering`, `DrawScene`, `EndRendering` and `EndFrame` with the order check; `IsRunning()` and the loop move
-   into `sandbox.cpp`. The riskiest step, therefore late: everything it moves is stable by then. Closes `lifecycle`.
-9. `todo`, Rule 1: terminal output. The start-up print of the initialisation chain, of the pipelines with their
+   Rule 1: terminal output. The start-up print of the initialisation chain, of the pipelines with their
    objects and of the frame sequence; the same views on an error. Closes `ascii_pipeline` (Could).
 10. `todo`, documentation: a README for students: the shape of `sandbox.cpp`, what a shader receives and the template,
     a new shader file needs a CMake re-configure, PNG to KTX2 with `toktx`, the terminal commands.
@@ -119,6 +116,15 @@ binding 0 and the material push constants, which is exactly the PBR layout the e
   `CreatePipeline` up to `CreatePipelines`); `Initialize()` is deleted at all three levels. The owner ran it on
   2026-09-22: the normal run is unchanged, a swapped pair gives the expected errors and a clean exit. Log:
   `docs/DELETIONS.md`.
+- 2026-09-22, `done`, Rule 1, planned change 8: the frame calls. Part 8a cut the tutorial's `Renderer::Render()` into
+  `BeginFrame`, `UpdateScene`, `BeginRendering`, `DrawScene`, `EndRendering`, `EndFrame` (refactor only, every line
+  kept; what was local to the function is the member `frame`); part 8b made them the six frame calls of the `Sandbox`
+  with the order check ("Frame sequence error: X() was called, Y() was expected. Rendering stopped.", after which
+  every frame call does nothing and `IsRunning()` is false, so the program exits normally), split `Engine::Run()`
+  into the loop condition `IsRunning()` and six forwarders, and moved the loop into `main()` in `sandbox.cpp`;
+  `Run()` and `Render()` are deleted at all levels. Extra approved by the owner: the first `IsRunning()` refuses to
+  start without an active camera. The owner ran 8a ("looks fine") and 8b (everything works) on 2026-09-22. Closes
+  `lifecycle`. Details: `docs/IMPLEMENTATION_PLAN.md`, log: `docs/DELETIONS.md`.
 
 ## Candidates already visible in the code (not decided)
 
@@ -180,8 +186,9 @@ is open. The names of calls and files (`IsRunning`, `AddToPipeline`, `CreateSphe
 - If a student removes a call or changes the order, the engine reports it. Every call checks its own prerequisites
   ("`CreateSwapChain()` needs `PickDevice()`"), and the render loop checks that all eight were made. The error names
   the missing call; once the optional `ascii_pipeline` exists, its view marks the call as well. (Implemented in the
-  sandbox layer: `Initialization error: CreateSwapChain() was called, but PickDevice() has not been done.` plus the
-  order with the first error; a repeated call is reported too. Of the scene calls, the owner decided on 2026-09-22
+  sandbox layer: `Initialization error: CreateSwapChain() was called, but PickDevice() has not been done.` plus,
+  with the first error, the chain view of planned change 9 with the missing call marked; a repeated call is
+  reported too. Of the scene calls, the owner decided on 2026-09-22
   that only those that need a Vulkan object check the chain: `LoadModel`, `CreateSphere`, `AddToPipeline` and `Run`
   need all eight, `CreatePipeline` needs `CreatePipelines`; `CreateCamera`, `CreateLight` and `SetActiveCamera`
   only create entities and are not guarded.)
@@ -270,7 +277,10 @@ is open. The names of calls and files (`IsRunning`, `AddToPipeline`, `CreateSphe
 ### Terminal output (`ascii_pipeline`)
 
 Printed once at start-up (initialisation chain, every pipeline, the frame sequence) and again on an error, never per
-frame. One pipeline:
+frame. (Implemented with planned change 9 on 2026-09-22 in `sandbox_impl.cpp`, own code: the start-up print comes
+from the first `IsRunning()`, after the start-up log; the printed text uses the code's American spelling, the
+heading line names both the `.slang` file and the `.spv` it is compiled to, the engine's `"pbr"` block marks every
+line as fixed, and every call of the two lists carries its description.) One pipeline:
 
 ```
 Pipeline "toon"    shaders/toon.spv

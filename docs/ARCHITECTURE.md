@@ -109,10 +109,11 @@ of the tutorial's `Engine::Initialize()` and `Renderer::Initialize()`, which wer
 The order check lives in the sandbox layer (`sandbox_impl.cpp`): a `done` flag per call. A call of the chain checks
 that it was not made before and that every call in front of it is done; `Run()`, `LoadModel()`, `CreateSphere()`
 and `AddToPipeline()` need all eight, `CreatePipeline()` needs `CreatePipelines()` (it copies the PBR pipeline
-layout created there). The error names the first call that is not done and, the first time, lists the order:
-`Initialization error: InitializeRendering() was called, but CreateSwapChain() has not been done. The initialization
-calls, in order: InitializeWindow() CreateInstance() ...`; the call then does nothing (`LoadModel()` and
-`CreateSphere()` return an empty object), and `Run()` returns without rendering. `CreateCamera()`, `CreateLight()`
+layout created there). The error names the first call that is not done, `Initialization error:
+InitializeRendering() was called, but CreateSwapChain() has not been done.`, and the first error is followed by the
+chain view of planned change 9 with that call marked (see "Terminal output"); the call then does nothing
+(`LoadModel()` and `CreateSphere()` return an empty object), and `Run()` returns without rendering.
+`CreateCamera()`, `CreateLight()`
 and `SetActiveCamera()` are not guarded: they only create entities and their handles stay usable. Engine and
 Renderer do no checking of their own, like the tutorial's private helpers; the `Sandbox` is their only caller.
 `Engine::Initialize()`, `Renderer::Initialize()` and `Sandbox::Initialize()` no longer exist. The name of the first
@@ -136,6 +137,30 @@ is drained and the commands are applied to the `TransformComponent`s (`Sandbox::
 loading ends. At exit the reader thread is still blocked in `getline`; being detached, it does not keep the process
 alive (checked with a pipe and with a console). Since planned change 8 the entity updates, and with them the
 draining, happen inside the frame call `UpdateScene()`.
+
+### Terminal output (planned change 9, own code)
+
+Three views on the terminal, in the form of `docs/ROADMAP.md`, "Terminal output". Printed once to stdout by the first
+`IsRunning()`, after its one-time work and the start-up log: the initialization chain as one line per call (`[ok]`,
+the name, what the call does); every pipeline as a block (`Pipeline "toon"    shaders/toon.slang -> shaders/toon.spv`,
+then the seven stages input assembly, vertex shader `VSMain`, rasterization with the cull mode, fragment shader
+`PSMain`, depth test, color blending and attachments, each marked `yours` when it is one of the four settings of an
+own pipeline and `fixed` otherwise, so every line of the engine's `"pbr"` block is fixed; then `Objects` with the
+names of the objects the pipeline draws); the frame sequence as one line per call with `[  ]`. The same lists on
+stderr after an error, with the call the error is about marked: an initialization error prints the chain once, with
+the first error (`[!!] PickDevice            <- missing`, or `<- called twice`, `<- failed`), and a frame sequence
+error or an exception inside a frame call prints the frame sequence with the expected call marked `<- missing` or the
+failing call `<- failed`; the calls in front of it are `[ok]`.
+
+How it works (`sandbox_impl.cpp`): description arrays next to the name arrays of the two call enums;
+`PrintCallList()` formats one list (the name column is as wide as the longest name plus two), `PrintPipeline()` one
+block (columns of 19 and 43 characters); the `Sandbox` keeps a `PipelineView` (name, shader file, settings, engine
+flag, object names) per pipeline, `"pbr"` first when `CreatePipelines()` succeeds, then one per successful
+`CreatePipeline()`, and `AddToPipeline()` appends the object's name to its view; an object that was added to no
+pipeline is listed under `"pbr"`, which is how the renderer draws it. A part is named after its object and material
+(`Room.wood`, `SceneObject::Part()`) so that the objects line is unambiguous. The `.spv` name in the heading is
+derived as the renderer derives it. The printed text uses American spelling like the rest of the code. No tutorial
+file changed.
 
 ## Files
 

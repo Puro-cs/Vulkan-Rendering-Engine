@@ -32,10 +32,10 @@ owner approval); none of them can be closed by deletion alone.
 | `descriptor` | Must | Descriptor pools, set layouts, UBO mapping hidden | met |
 | `input_handling` | Must | GLFW input captured and turned into scene navigation internally | met |
 | `texture_pipeline` | Must | Whole texture life cycle hidden | met (KTX2 only) |
-| `lifecycle` | Must | Students drive the frame life cycle through simplified calls in a fixed order | met since planned change 8 (2026-09-22); the owner's run of part 8b is pending |
+| `lifecycle` | Must | Students drive the frame life cycle through simplified calls in a fixed order | met since planned change 8 (2026-09-22; the owner's run confirmed it the same day) |
 | `einfache_pipeline` | Must | Shader assignment and pipeline state through simplified abstractions | met since planned changes 4 and 5 (2026-09-21): `Sandbox::CreatePipeline()` / `AddToPipeline()` |
 | `tr:szenenmanagement` | Must | Load and transform models, cameras, lights without manual buffers; auto-translate to UBO / push constants | met since planned changes 3 and 5 (2026-09-21; the owner's run of planned change 5 confirmed it on 2026-09-22). Since planned change 6 (2026-09-22) objects and lights can also be moved, rotated and scaled while rendering, through terminal commands |
-| `ascii_pipeline` | Could | ASCII rendering of the pipeline in the terminal | not met |
+| `ascii_pipeline` | Could | ASCII rendering of the pipeline in the terminal | met since planned change 9 (2026-09-22); the owner's run is pending |
 | `validation_layer` | Must | Validation layers wired in, messages readable | met |
 | `keine_audio_physik` | Won't | No audio, no physics | met |
 
@@ -177,7 +177,7 @@ frame). Recording the individual draw commands into the command buffer stays ins
 on 2026-09-21: in the original entry the students bundled the draw commands in a command buffer themselves. The
 thesis label `ns:1_CB_rendering` is unchanged.)
 
-**Status since 2026-09-22 (planned change 8).** Met, the owner's run of part 8b pending. `main()` in `sandbox.cpp`
+**Status since 2026-09-22 (planned change 8).** Met; the owner's run confirmed it on 2026-09-22. `main()` in `sandbox.cpp`
 renders with `while (sandbox.IsRunning()) { BeginFrame(); UpdateScene(); BeginRendering(); DrawScene();
 EndRendering(); EndFrame(); }`: the six calls are the six parts of the tutorial's `Renderer::Render()` (every line
 kept, `docs/ARCHITECTURE.md`, "One frame"), `UpdateScene()` preceded by the tutorial's `Engine::Update()`. The
@@ -267,9 +267,18 @@ Thesis refs: `vp:pipeline`.
 
 **Requirement.** At run time the Vulkan render pipeline is drawn as ASCII art in the terminal to support learning.
 
-**Code today.** Nothing; no pipeline introspection or printing exists, neither in the port nor upstream.
+**Status since 2026-09-22 (planned change 9).** Met; the owner's run is pending. The first `IsRunning()` prints, once,
+the initialization chain (one line per call, `[ok]`, with what the call does), every pipeline as a block of its seven
+stages from the input assembly to the attachments (the four settings of an own pipeline marked `yours`, the rest
+`fixed`; the objects that are drawn with it) and the six frame calls; an initialization error or a frame sequence
+error prints the same list on stderr with the failed call marked (`[!!] PickDevice            <- missing`). It is
+text with fixed columns rather than a drawing of the GPU pipeline, in the form the owner chose in `docs/ROADMAP.md`,
+"Terminal output". The paragraphs below describe the state before.
 
-**Gap.** Not met (optional). Rule 1.
+**Code before planned change 9.** Nothing; no pipeline introspection or printing existed, neither in the port nor
+upstream.
+
+**Gap (before planned change 9).** Not met (optional). Rule 1.
 
 ### `validation_layer` — Error handling with validation layers (Must)
 

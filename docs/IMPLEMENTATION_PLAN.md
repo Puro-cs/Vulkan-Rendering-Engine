@@ -329,8 +329,7 @@ assert in Debug). `main()` in `sandbox.cpp` is the eight initialization calls, `
 `while (IsRunning()) { the six calls }`. Consequence of the new order: `Engine::Update()` (camera controls, ImGui
 `NewFrame`) runs after `BeginFrame()`'s acquire instead of before it, which is why 8a moved the light list and the
 UBO template into `UpdateScene`. Debug and Release builds: 0 errors, 0 warnings, eleven files recompiled, nothing
-stale. Open: the owner's run (the normal run unchanged; one frame call removed or two swapped stops rendering with
-the error that names the expected call).
+stale. The owner checked 8b on 2026-09-22 and reported that everything works. Step 8 is done.
 
 ## Step 9: terminal output (Rule 1, S)
 
@@ -340,6 +339,27 @@ the error that names the expected call).
    of steps 7 and 8 with the failed call marked.
 
 Check: start-up print and both error views. Closes `ascii_pipeline`.
+
+Status: implemented on 2026-09-22 after the owner approved the diff (254 added / 16 removed lines over `sandbox.h`
+and `sandbox_impl.cpp`, sent as a file, test-compiled before with the project's Debug flags in a scratch copy).
+Sub-step 1: `PrintCallList()` (one list in the roadmap's form: `[ok]` for the calls that are done, `[!!]` for the
+call the error is about with `<- missing` / `<- called twice` / `<- failed`, `[  ]` for the rest, every other line
+with its description) and `PrintPipeline()` (the roadmap's block: the seven stages from the input assembly to the
+attachments, the four settings marked `yours` on an own pipeline and everything `fixed` on the engine's `"pbr"`, the
+objects line; the heading names the `.slang` file and the `.spv` it is compiled to), with description arrays next
+to the existing name arrays. The `Sandbox` keeps a `PipelineView` per pipeline (`"pbr"` when `CreatePipelines()`
+succeeds, one per `CreatePipeline()`, the objects from `AddToPipeline()`); an object that was added to no pipeline
+is listed under `"pbr"`. Sub-step 2: `PrintOverview()` on stdout from the first `IsRunning()` after its one-time
+work; `ReportInitializationChain()` on stderr with the first initialization error (a missing call, a call made
+twice, a failed call), replacing the old one-line list of the order; `FrameSequenceError()` and the exception path
+of `FrameCall()` print the frame view with the expected call marked missing or the failing call marked failed.
+Decisions of the owner in the approval dialog: a part is named `Room.wood` (two changed lines in `Part()`, so
+`GetName()` of a part changes too), and the box column is printed at start-up as well. The scratch exe of the
+printers was blocked by Smart App Control (by reputation, in the build folder too), so the expected output was
+derived from the fixed widths and shown to the owner as text. Debug and Release builds: 0 errors, 0 warnings, the
+two files that include `sandbox.h` recompiled (`sandbox.cpp`, `sandbox_impl.cpp`), their objects newer than the
+sources, nothing stale. Open: the owner's run (the start-up print, a skipped initialization call, a skipped frame
+call).
 
 ## Step 10: README for students (documentation, S)
 
