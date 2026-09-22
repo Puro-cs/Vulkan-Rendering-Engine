@@ -22,7 +22,8 @@ no render passes or framebuffers. C++20, Slang shaders, Dear ImGui 1.92 vendored
 sandbox.cpp (the students' file: SetupScene() and main(); includes only sandbox.h)
   Sandbox (sandbox.h / sandbox_impl.cpp, own code: the engine as students see it, no Vulkan types)
     SceneObject, Camera, Light   handles over entities, owned by the Sandbox
-  CrashReporter (singleton, minidumps; started by Sandbox::Initialize())
+    TerminalCommands (terminal_commands.h/.cpp, own code: reader thread on std::cin, queue, parser)
+  CrashReporter (singleton, minidumps; started by the Sandbox constructor)
   Engine (owned by the Sandbox)
     Platform (DesktopPlatform: GLFW window, input callbacks, surface)
     Renderer (everything Vulkan; ~7.2k lines across renderer_*.cpp)
@@ -39,6 +40,8 @@ sandbox.cpp (the students' file: SetupScene() and main(); includes only sandbox.
       MeshComponent        CPU-side vertices, indices, instances, material id
       LightComponent       type, colour, intensity, range, cone angles; position and direction from the
                            entity's transform (shines along its -Z axis). Own code, added 2026-09-21
+      TerminalCommandComponent  on the entity "TerminalCommands" only: its Update() applies the typed
+                           terminal commands once per frame (sandbox_impl.cpp, own code, added 2026-09-22)
 ```
 
 Scene loading is a free function pair in `scene_loading.h/.cpp`: `LoadGLTFModel(engine, path, pos, rotDeg, scale)`.
@@ -59,7 +62,7 @@ listing: `sandbox.cpp` pulls in `sandbox.h`, `pipeline_settings.h`, glm and the 
 
 | Class | What students do with it |
 |---|---|
-| `Sandbox` | `Initialize(title, width, height)`, `Run()`; `CreateCamera`, `SetActiveCamera`, `CreateLight(name, LightType)`, `LoadModel(name, file)`, `CreateSphere(name, radius)`; `CreatePipeline(name, shaderFile, settings)`, `AddToPipeline(name, object)`. Owns the tutorial's `Engine` and every object it hands out |
+| `Sandbox` | the initialization chain `InitializeWindow(title, width, height)`, `CreateInstance`, `PickDevice`, `CreateSwapChain`, `InitializeRendering`, `CreatePipelines`, `CreateCommandBuffers`, `CreateSyncObjects` (see "The initialization chain"), `Run()`; `CreateCamera`, `SetActiveCamera`, `CreateLight(name, LightType)`, `LoadModel(name, file)`, `CreateSphere(name, radius)`; `CreatePipeline(name, shaderFile, settings)`, `AddToPipeline(name, object)`. Owns the tutorial's `Engine` and every object it hands out |
 | `SceneObject` | a name plus the entities of a loaded model (one per material) or of a simple mesh. `SetPosition` / `SetRotation` / `SetScale`, `Move` / `Rotate` / `Scale` are forwarded to all parts, angles in degrees. `Part(materialName)` addresses one part; the glTF loader names its entities `<model>_Material_<index>_<materialName>` |
 | `Camera` | `SetPosition`, `SetRotation` (degrees; without a rotation it looks along -Z), `SetFieldOfView` |
 | `Light` | `SetPosition`, `SetRotation` or `SetDirection` (a light shines along the -Z axis of its transform; `SetDirection` computes the rotation), `SetColor`, `SetIntensity`, `SetRange`, `SetConeAngles` (degrees) |
@@ -67,19 +70,67 @@ listing: `sandbox.cpp` pulls in `sandbox.h`, `pipeline_settings.h`, glm and the 
 A failed `LoadModel()` and an unknown `Part()` print an error and return an empty object, so that calls on it do
 nothing. A second `LoadModel()` appends its glTF lights to those of the first (the tutorial's loader replaces the
 list). `CreateSphere()` queues the GPU upload itself. `Run()` ends the engine's initial load cycle when no model was
-loaded; without that the loading overlay would stay forever. Until planned changes 7 and 8, `main()` still calls one
-`Initialize()` and one `Run()`.
+loaded; without that the loading overlay would stay forever. Until planned change 8, `main()` still calls one `Run()`
+for the whole render loop.
+
+### The initialization chain (planned change 7, own code)
+
+`main()` initializes the engine with eight calls in a fixed order; each one is a group of the Vulkan set-up steps
+of the tutorial's `Engine::Initialize()` and `Renderer::Initialize()`, which were split along this table on
+2026-09-22 (inside a group the engine's internal order is unchanged):
+
+| Call | What the engine does |
+|---|---|
+| `InitializeWindow(title, width, height)` | `Engine::InitializeWindow()`: the GLFW platform and window, the four input callbacks |
+| `CreateInstance()` | `Engine::CreateInstance()` creates the `Renderer`; `Renderer::CreateInstance()`: the vulkan.hpp dispatcher, the instance, the debug messenger, the surface |
+| `PickDevice()` | `Renderer::PickDevice()`: the physical device, the logical device with its queues, the memory pool |
+| `CreateSwapChain()` | `Renderer::CreateSwapChain()`: the swap chain and its image views |
+| `InitializeRendering()` | `Renderer::InitializeRendering()`: the dynamic rendering attachment info, the depth image, the off-screen opaque colour images. The two images used to come after the command pool; they can come first because `transitionImageLayout()` records with a temporary pool |
+| `CreatePipelines()` | `Renderer::CreatePipelines()`: the PBR descriptor set layouts and pipelines (opaque, blended, glass), the composite pipeline, the light storage buffers |
+| `CreateCommandBuffers()` | `Renderer::CreateCommandBuffers()`: the command pool, the descriptor pool, the transparent descriptor sets, the default textures, the fallback sets, the shared PBR textures, the command buffers |
+| `CreateSyncObjects()` | `Renderer::CreateSyncObjects()`: semaphores and fences, the thread pool, the uploads worker, the watchdog; then `Engine::CreateSyncObjects()` creates the model loader and the ImGui system. The engine is initialized after it |
+
+The order check lives in the sandbox layer (`sandbox_impl.cpp`): a `done` flag per call. A call of the chain checks
+that it was not made before and that every call in front of it is done; `Run()`, `LoadModel()`, `CreateSphere()`
+and `AddToPipeline()` need all eight, `CreatePipeline()` needs `CreatePipelines()` (it copies the PBR pipeline
+layout created there). The error names the first call that is not done and, the first time, lists the order:
+`Initialization error: InitializeRendering() was called, but CreateSwapChain() has not been done. The initialization
+calls, in order: InitializeWindow() CreateInstance() ...`; the call then does nothing (`LoadModel()` and
+`CreateSphere()` return an empty object), and `Run()` returns without rendering. `CreateCamera()`, `CreateLight()`
+and `SetActiveCamera()` are not guarded: they only create entities and their handles stay usable. Engine and
+Renderer do no checking of their own, like the tutorial's private helpers; the `Sandbox` is their only caller.
+`Engine::Initialize()`, `Renderer::Initialize()` and `Sandbox::Initialize()` no longer exist. The name of the first
+call is `InitializeWindow` rather than the roadmap's working name `CreateWindow`, which is a `windows.h` macro.
+
+### Terminal commands (planned change 6, own code)
+
+While the engine renders, objects and lights can be moved from the terminal the engine was started from:
+`Room.Move(1, 0, 0)`, `Sun.Rotate(0, 30, 0)` (degrees), `Sphere.Scale(2, 2, 2)`. The name is the one given to
+`LoadModel()`, `CreateSphere()` or `CreateLight()`; a command on an object reaches all its parts. Blanks are allowed
+anywhere and a `;` may end the line. Everything else (a wrong spelling, a missing number, an unknown name, `Scale` on
+a light) answers with one line on stderr that lists the three forms and the known names. A successful command prints
+nothing. Cameras are not addressable, because the fly controls overwrite the camera rotation every frame.
+
+How it works: `Run()` starts a detached reader thread that blocks in `std::getline(std::cin)` and pushes each line
+into a mutex-guarded queue (`TerminalCommands`, `terminal_commands.h/.cpp`). `Run()` also creates an entity
+"TerminalCommands" with a `TerminalCommandComponent`; the tutorial's `Engine::Update()` updates all components once
+per frame on the main thread and skips that while a model is loading, so the component is the place where the queue
+is drained and the commands are applied to the `TransformComponent`s (`Sandbox::Impl::ApplyTerminalCommands()` in
+`sandbox_impl.cpp`). No tutorial file changed for this. Lines typed while the loading overlay shows are applied when
+loading ends. At exit the reader thread is still blocked in `getline`; being detached, it does not keep the process
+alive (checked with a pipe and with a console). Planned change 8 moves the draining into `UpdateScene()`.
 
 ## Files
 
 | File(s) | Responsibility | Used at run time |
 |---|---|---|
 | `sandbox.cpp` | the students' file: window size, `SetupScene(Sandbox &)` with the example scene (camera, "Sun", Viking room, a sphere), `main()`. Own code; takes the place of the tutorial's `main.cpp` since planned change 5 | yes |
-| `sandbox.h`, `sandbox_impl.cpp` | the student-facing layer (see "The sandbox layer"): `Sandbox`, `SceneObject`, `Camera`, `Light`; crash reporter start, validation toggle, `Engine::Initialize()` / `Run()`. Own code | yes |
-| `engine.h/.cpp` | main loop, delta time, FPS title, entity list with removal queue, camera fly controls, input routing to ImGui | yes |
+| `sandbox.h`, `sandbox_impl.cpp` | the student-facing layer (see "The sandbox layer"): `Sandbox`, `SceneObject`, `Camera`, `Light`; crash reporter start, validation toggle, the initialization chain with its order check (planned change 7), `Engine::Run()`; since planned change 6 also `TerminalCommandComponent` and the code that applies the terminal commands. Own code | yes |
+| `terminal_commands.h/.cpp` | `TerminalCommands`: the reader thread on `std::cin`, the queue of typed lines, the parser of `Name.Move(x, y, z)` / `Rotate` / `Scale` (see "Terminal commands"). No engine or Vulkan include. Own code, planned change 6 | yes |
+| `engine.h/.cpp` | the eight calls of the initialization chain (since planned change 7; the tutorial's `Initialize()` split), main loop, delta time, FPS title, entity list with removal queue, camera fly controls, input routing to ImGui | yes |
 | `platform.h/.cpp` | `Platform` interface + `DesktopPlatform` (GLFW) | yes |
 | `renderer.h` | the whole `Renderer` class declaration, UBO / push-constant structs, `LoadingPhase` | yes |
-| `renderer_core.cpp` | instance, debug messenger, device and feature selection, swap chain, sync objects, command pools | yes |
+| `renderer_core.cpp` | the seven renderer calls of the initialization chain (since planned change 7; the tutorial's `Initialize()` split), instance, debug messenger, device and feature selection, cleanup, watchdog | yes |
 | `renderer_pipelines.cpp` | descriptor set layouts and graphics pipelines: PBR (opaque, blended, glass; a premultiplied-alpha variant is declared in `renderer.h` but never created, as in the tutorial) and composite. Since planned change 4 also the named pipelines: `createNamedPipeline()`, `CreatePipeline()`, `AddToPipeline()` (own code) | yes |
 | `pipeline_settings.h` | `CullMode`, `PipelineSettings` (cull mode, depth test, blending): the description of a named pipeline, without Vulkan types (own code, planned change 4) | yes |
 | `renderer_resources.cpp` | buffers, images, textures (KTX2 via libktx), mipmaps, per-entity resources, streaming queues | yes |
@@ -126,7 +177,8 @@ the cull mode (default none), the depth test (default on; compare `LessOrEqual`)
 the blend factors of the engine's blended pipeline, no depth writes, transparent pass). Everything else is copied
 from the opaque PBR pipeline, including the PBR pipeline layout, so every named pipeline receives exactly the inputs
 of the next section. The descriptions are kept in creation order and `recreateSwapChain()` rebuilds the pipelines
-from them. Call `CreatePipeline()` after `Initialize()` and before rendering; the name `"pbr"` is reserved.
+from them. Call `CreatePipeline()` after `CreatePipelines()` (planned change 7; it creates the layout that is copied)
+and before rendering; the name `"pbr"` is reserved.
 
 `Renderer::AddToPipeline(name, entity)` records, in the renderer, which pipelines an entity was added to (an unknown
 name is an error that lists the known names). An entity that was added to no pipeline is drawn as before, with the
@@ -157,7 +209,7 @@ sRGB swap chain).
 
 ## One frame (`Renderer::Render`, `renderer_rendering.cpp`)
 
-1. `Engine::Run`: `platform->ProcessEvents()`, delta time, `Update()` (camera controls; entity updates skipped while loading), `Render()` with a snapshot of entity pointers.
+1. `Engine::Run`: `platform->ProcessEvents()`, delta time, `Update()` (camera controls; entity updates skipped while loading; among the entity updates the `TerminalCommandComponent` applies the terminal commands typed since the last frame), `Render()` with a snapshot of entity pointers.
 2. Build the frame light list from `staticLights` (the glTF lights) plus the lights of all active entities with a `LightComponent`, upload to the light storage buffer; fill the UBO template from the camera.
 3. Wait on this frame slot's fence, reset it. Safe point: drain pending mesh uploads and entity preallocations.
 4. Apply dirty descriptor writes for this frame index.

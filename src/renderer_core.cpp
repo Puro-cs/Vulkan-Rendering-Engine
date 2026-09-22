@@ -132,9 +132,12 @@ Renderer::~Renderer() {
   Cleanup();
 }
 
-// Initialize the renderer
-bool Renderer::Initialize(const std::string& appName, bool enableValidationLayers) {
-  LOGI("Renderer::Initialize start");
+// The initialization chain: the body of the tutorial's Initialize() in seven groups, calls 2 to 8 of the
+// sandbox file (call 1, the window, belongs to the Engine). The calls are made in the order in which they
+// are declared in renderer.h; the sandbox layer checks that order.
+
+// Initialization chain, call 2: the Vulkan instance, the debug messenger and the surface
+bool Renderer::CreateInstance(const std::string& appName, bool enableValidationLayers) {
   // Initialize the Vulkan-Hpp default dispatcher.
   VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
   // Create a Vulkan instance
@@ -161,6 +164,11 @@ bool Renderer::Initialize(const std::string& appName, bool enableValidationLayer
   }
   LOGI("Surface created successfully");
 
+  return true;
+}
+
+// Initialization chain, call 3: the physical device, the logical device and the memory pool
+bool Renderer::PickDevice(bool enableValidationLayers) {
   // Pick the physical device
   LOGI("Picking physical device...");
   if (!pickPhysicalDevice()) {
@@ -191,6 +199,11 @@ bool Renderer::Initialize(const std::string& appName, bool enableValidationLayer
     return false;
   }
 
+  return true;
+}
+
+// Initialization chain, call 4: the swap chain and its image views
+bool Renderer::CreateSwapChain() {
   // Create swap chain
   LOGI("Creating swap chain...");
   if (!createSwapChain()) {
@@ -207,6 +220,12 @@ bool Renderer::Initialize(const std::string& appName, bool enableValidationLayer
   }
   LOGI("Image views created successfully");
 
+  return true;
+}
+
+// Initialization chain, call 5: dynamic rendering, the depth image and the off-screen color image.
+// The two images come before the command pool now: transitionImageLayout() records with a temporary pool.
+bool Renderer::InitializeRendering() {
   // Setup dynamic rendering
   LOGI("Setting up dynamic rendering...");
   if (!setupDynamicRendering()) {
@@ -215,6 +234,26 @@ bool Renderer::Initialize(const std::string& appName, bool enableValidationLayer
   }
   LOGI("Dynamic rendering setup successfully");
 
+  // Create depth resources
+  LOGI("Creating depth resources...");
+  if (!createDepthResources()) {
+    LOGE("Failed to create depth resources");
+    return false;
+  }
+  LOGI("Depth resources created successfully");
+
+  LOGI("Creating opaque scene color resources...");
+  if (!createOpaqueSceneColorResources()) {
+    LOGE("Failed to create opaque scene color resources");
+    return false;
+  }
+  LOGI("Opaque scene color resources created successfully");
+
+  return true;
+}
+
+// Initialization chain, call 6: the descriptor set layouts, the PBR and composite pipelines, the light buffers
+bool Renderer::CreatePipelines() {
   // Create PBR pipeline
   LOGI("Creating PBR pipeline...");
   if (!createPBRPipeline()) {
@@ -239,6 +278,11 @@ bool Renderer::Initialize(const std::string& appName, bool enableValidationLayer
   }
   LOGI("Light storage buffers created successfully");
 
+  return true;
+}
+
+// Initialization chain, call 7: the command pool, the descriptor pool, the default textures and the command buffers
+bool Renderer::CreateCommandBuffers() {
   // Create the command pool
   LOGI("Creating command pool...");
   if (!createCommandPool()) {
@@ -247,14 +291,6 @@ bool Renderer::Initialize(const std::string& appName, bool enableValidationLayer
   }
   LOGI("Command pool created successfully");
 
-  // Create depth resources
-  LOGI("Creating depth resources...");
-  if (!createDepthResources()) {
-    LOGE("Failed to create depth resources");
-    return false;
-  }
-  LOGI("Depth resources created successfully");
-
   // Create the descriptor pool
   LOGI("Creating descriptor pool...");
   if (!createDescriptorPool()) {
@@ -262,13 +298,6 @@ bool Renderer::Initialize(const std::string& appName, bool enableValidationLayer
     return false;
   }
   LOGI("Descriptor pool created successfully");
-
-  LOGI("Creating opaque scene color resources...");
-  if (!createOpaqueSceneColorResources()) {
-    LOGE("Failed to create opaque scene color resources");
-    return false;
-  }
-  LOGI("Opaque scene color resources created successfully");
 
   LOGI("Creating transparent descriptor sets...");
   createTransparentDescriptorSets();
@@ -303,6 +332,11 @@ bool Renderer::Initialize(const std::string& appName, bool enableValidationLayer
   }
   LOGI("Command buffers created successfully");
 
+  return true;
+}
+
+// Initialization chain, call 8: the semaphores and fences, the worker threads and the watchdog
+bool Renderer::CreateSyncObjects() {
   // Create sync objects
   LOGI("Creating sync objects...");
   if (!createSyncObjects()) {
@@ -340,7 +374,7 @@ void Renderer::ensureThreadLocalVulkanInit() const {
   static thread_local bool s_tlsInitialized = false;
   if (s_tlsInitialized)
     return;
-    // The dispatcher is global and initialized on the main thread during Renderer::Initialize.
+    // The dispatcher is global and initialized on the main thread during Renderer::CreateInstance.
     // Background threads inherit this global state. No per-thread init is required
     // for VULKAN_HPP_DEFAULT_DISPATCHER when using the default storage.
     s_tlsInitialized = true;

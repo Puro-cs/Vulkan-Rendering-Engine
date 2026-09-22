@@ -187,9 +187,10 @@ it a scene of only spheres would show the loading overlay forever); `Light::SetD
 the rotation of the light's transform. Known limit, to be solved with step 8: `LoadModel()` blocks the main thread
 before the loop, and the engine's watchdog aborts after 10 s without a frame, so a model that takes longer than that
 to parse trips it. Configure, Debug and Release builds: 0 errors, 0 warnings; every object file checked against
-MSBuild's dependency log, nothing stale. Open: the owner's run. The position of the sphere (0.5, 0.3, -1.2) was
+MSBuild's dependency log, nothing stale. The position of the sphere (0.5, 0.3, -1.2) was
 chosen without seeing the picture. The check "a second model keeps the lights of the first" cannot be seen with the
-Viking room (it has no glTF lights); it needs a second model with a `KHR_lights_punctual` light.
+Viking room (it has no glTF lights); it needs a second model with a `KHR_lights_punctual` light. The owner ran the
+step on 2026-09-22 and reported that everything works. The step is done.
 
 ## Step 6: terminal commands (Rule 1, S)
 
@@ -201,6 +202,23 @@ Viking room (it has no glTF lights); it needs a second model with a `KHR_lights_
 
 Check: `Room.Move(1, 0, 0)` moves the room in the next frame; `Sun.Rotate(...)` changes the lighting. Note: the
 engine's info output in the same terminal is chatty; typing works but is not pretty.
+
+Status: implemented on 2026-09-22 after the owner approved the complete diff (402 lines, shown in the chat,
+test-compiled before with the project's compiler settings in a scratch copy of the source tree; a scratch program
+checked 34 parser cases and that the process ends although the reader thread is blocked in `getline`, with a pipe
+and with a console). New: `src/terminal_commands.h` (83 lines: `TerminalCommand`, `TerminalCommands` with `Start()`,
+`TakeLines()`, `Parse()`) and `src/terminal_commands.cpp` (124); changed: `src/sandbox_impl.cpp` +142
+(`TerminalCommandComponent`, `FindEntities()`, `PrintTerminalHelp()`, `ApplyTerminalCommands()`, three lines in
+`Run()`) and one line of `CMakeLists.txt`. Decision of the owner (2026-09-22): the once-per-frame call of sub-step 2
+is not a call inside `Engine::Update()` but a component on an entity of its own ("TerminalCommands"); the tutorial's
+`Engine::Update()` already updates all components once per frame on the main thread and skips that while a model is
+loading, so no tutorial file changed. Difference to the sub-step: lines typed while the loading overlay shows are
+kept and applied when loading ends, not dropped. Beyond the sub-steps: lights are addressable too (`Move`, `Rotate`;
+`Scale` on a light is refused because a zero scale would break its direction), cameras are not (the fly controls
+overwrite the camera rotation every frame); a `;` may end a line; an empty line is ignored; the help line lists the
+known names. Configure re-run (new source file), Debug and Release builds: 0 errors, 0 warnings; every object file
+checked against MSBuild's dependency log, nothing stale. The owner ran it on 2026-09-22: everything works. The step
+is done.
 
 ## Step 7: the initialisation chain (Rule 1, M)
 
@@ -224,6 +242,31 @@ engine's info output in the same terminal is chatty; typing works but is not pre
 3. `sandbox.cpp` switches from `Initialize()` to the eight calls.
 
 Check: the normal run is unchanged; removing one call, or swapping two, gives the error that names the missing call.
+
+Status: implemented on 2026-09-22 after the owner approved the complete diff (765 lines over seven files, shown in
+the chat; test-compiled before with the project's compiler settings in a scratch copy of the source tree).
+Sub-step 1: `Renderer::Initialize()` became the seven public calls `CreateInstance` to `CreateSyncObjects` in
+`renderer_core.cpp` (+53 / -19 lines, `renderer.h` +45 / -4); a normalised comparison of the old body with the new
+ones finds every tutorial line again (gone: the header and `LOGI("Renderer::Initialize start")`; new: seven headers,
+six `return true;` with braces, comments). `Engine::Initialize()` became eight calls in `engine.cpp` (+42 / -3,
+`engine.h` +52 / -3): `InitializeWindow` with the platform and callbacks, `CreateInstance` creating the renderer,
+five forwarders, `CreateSyncObjects` with the model loader and ImGui; one changed tutorial line (ImGui gets the
+window size from the platform instead of the former parameters). Sub-step 2: the flags and the check live in the
+sandbox layer (`sandbox_impl.cpp` +149 / -34, `sandbox.h` +71 / -16): each call of the chain rejects a repeat and
+reports the first call in front of it that is not done, the order is appended with the first error; `Run`,
+`LoadModel`, `CreateSphere`, `AddToPipeline` need all eight, `CreatePipeline` needs `CreatePipelines`. Sub-step 3:
+`main()` makes the eight calls (`sandbox.cpp` +10 / -5); `Sandbox::Initialize()`, `Engine::Initialize()` and
+`Renderer::Initialize()` are deleted. Decisions of the owner (2026-09-22): the first call is `InitializeWindow`
+(`CreateWindow` is a `windows.h` macro that `sandbox_impl.cpp` sees through `crash_reporter.h`; the definition and
+the call in `sandbox.cpp` would be different symbols); `CreateCamera`, `CreateLight` and `SetActiveCamera` are not
+guarded, because they need no Vulkan object and a guard would need null-safe handles; `Initialize()` is not kept as
+a convenience. Deviation from sub-step 2: `CreatePipeline()` requires `CreatePipelines()` rather than
+`InitializeRendering()`, because the PBR pipeline layout it copies is created there. Debug and Release builds:
+0 errors, 0 warnings, the eleven files that include `engine.h` or `renderer.h` recompiled, every object file checked
+against MSBuild's dependency log, nothing stale. The owner ran it on 2026-09-22: the normal run is unchanged, and
+with `PickDevice()` and `CreateInstance()` swapped the log shows the first error naming `CreateInstance()` with the
+order, `CreateInstance()` running normally afterwards, every later call naming `PickDevice()`, no watchdog, no window
+loop, a clean exit with code 0. The step is done. Log: `docs/DELETIONS.md`.
 
 ## Step 8: the frame calls (Rule 1, L, the riskiest step)
 

@@ -198,9 +198,11 @@ class Light
 /**
  * @brief The engine as the sandbox file sees it.
  *
- * Every group of Vulkan steps is one call. All scene objects are created in SetupScene(), before
- * rendering starts. The objects that the Create... and Load... calls return belong to the engine;
- * they stay valid until the Sandbox is destroyed.
+ * Every group of Vulkan steps is one call. The engine is initialized by the eight calls of the
+ * initialization chain, in the order in which they are declared below; a call that is made out of
+ * order, twice, or without the calls before it, reports the error and does nothing. All scene objects
+ * are created in SetupScene(), after the chain and before rendering starts. The objects that the
+ * Create... and Load... calls return belong to the engine; they stay valid until the Sandbox is destroyed.
  */
 class Sandbox
 {
@@ -208,19 +210,81 @@ class Sandbox
 	Sandbox();
 	~Sandbox();
 
+	// --- The initialization chain: eight calls in this order ---
+
 	/**
-	 * @brief Create the window and initialize the engine.
+	 * @brief Initialization call 1: the window and its input callbacks.
 	 * @param title The title of the window.
 	 * @param width The width of the window.
 	 * @param height The height of the window.
-	 * @return True if initialization was successful, false otherwise.
+	 * @return True if the call was made in order and succeeded, false otherwise.
 	 */
-	bool Initialize(const std::string &title, int width, int height);
+	bool InitializeWindow(const std::string &title, int width, int height);
 
 	/**
-	 * @brief Render until the window is closed.
+	 * @brief Initialization call 2: the Vulkan instance, the debug messenger and the window surface.
+	 * @return True if the call was made in order and succeeded, false otherwise.
+	 */
+	bool CreateInstance();
+
+	/**
+	 * @brief Initialization call 3: the physical device (the GPU), the logical device with its queues
+	 * and the memory pool.
+	 * @return True if the call was made in order and succeeded, false otherwise.
+	 */
+	bool PickDevice();
+
+	/**
+	 * @brief Initialization call 4: the swap chain and its image views.
+	 * @return True if the call was made in order and succeeded, false otherwise.
+	 */
+	bool CreateSwapChain();
+
+	/**
+	 * @brief Initialization call 5: dynamic rendering, the depth image and the off-screen color image.
+	 * @return True if the call was made in order and succeeded, false otherwise.
+	 */
+	bool InitializeRendering();
+
+	/**
+	 * @brief Initialization call 6: the engine's own pipelines ("pbr" and the composite pass) with their
+	 * descriptor set layouts, and the light buffers. Own pipelines are created after this call.
+	 * @return True if the call was made in order and succeeded, false otherwise.
+	 */
+	bool CreatePipelines();
+
+	/**
+	 * @brief Create an own pipeline from a shader file. Not part of the chain, but it needs
+	 * CreatePipelines(), which creates the layout that every pipeline shares.
+	 * @param name The name of the pipeline, used by AddToPipeline(). "pbr" is the pipeline of the engine.
+	 * @param shaderFile The shader, e.g. "shaders/toon.slang". It needs the entry points VSMain and PSMain.
+	 * @param settings Cull mode, depth test and blending.
+	 * @return True if the pipeline was created, false otherwise.
+	 */
+	bool CreatePipeline(const std::string &name, const std::string &shaderFile, const PipelineSettings &settings = {});
+
+	/**
+	 * @brief Initialization call 7: the command pool, the descriptor pool, the default textures and the
+	 * command buffers.
+	 * @return True if the call was made in order and succeeded, false otherwise.
+	 */
+	bool CreateCommandBuffers();
+
+	/**
+	 * @brief Initialization call 8: the semaphores and fences, the worker threads, the model loader and
+	 * the UI. The engine is ready after this call.
+	 * @return True if the call was made in order and succeeded, false otherwise.
+	 */
+	bool CreateSyncObjects();
+
+	// --- Rendering ---
+
+	/**
+	 * @brief Render until the window is closed. Needs the complete initialization chain.
 	 */
 	void Run();
+
+	// --- The scene: called in SetupScene(), after the initialization chain ---
 
 	/**
 	 * @brief Create a camera.
@@ -260,15 +324,6 @@ class Sandbox
 	 * @return The object.
 	 */
 	SceneObject *CreateSphere(const std::string &name, float radius);
-
-	/**
-	 * @brief Create a pipeline from a shader file. Call it after Initialize().
-	 * @param name The name of the pipeline, used by AddToPipeline(). "pbr" is the pipeline of the engine.
-	 * @param shaderFile The shader, e.g. "shaders/toon.slang". It needs the entry points VSMain and PSMain.
-	 * @param settings Cull mode, depth test and blending.
-	 * @return True if the pipeline was created, false otherwise.
-	 */
-	bool CreatePipeline(const std::string &name, const std::string &shaderFile, const PipelineSettings &settings = {});
 
 	/**
 	 * @brief Add all parts of an object to a pipeline.

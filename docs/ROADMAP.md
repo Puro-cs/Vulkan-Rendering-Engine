@@ -14,21 +14,9 @@ The owner approved this order on 2026-09-21. Implementation started the same day
 that step is implemented. The target is the student-facing interface at the end of this file. Logging, builds and
 runs follow `docs/WORKFLOW.md`. Steps 1 and 2 only delete code (step 2 also adds the template shader); step 3 swaps a
 shader and adds the light component; the student-facing interface starts with step 4. The sub-steps, the code each
-step touches and its checks are in `docs/IMPLEMENTATION_PLAN.md`. Steps 1 to 4 are done and listed under "Done"; the
+step touches and its checks are in `docs/IMPLEMENTATION_PLAN.md`. Steps 1 to 7 are done and listed under "Done"; the
 remaining steps keep their numbers, because this file and the plan refer to them by number.
 
-5. `in progress` since 2026-09-21: implemented after the owner's approval of the complete diff (class name
-   `Sandbox`, `main.cpp` deleted, the sphere stays in the example scene), Debug and Release built with 0 errors.
-   Open: the owner's run (the lit room as before, plus a small white sphere in front of it). Log:
-   `docs/DELETIONS.md`, "Added code".
-   Rule 1: the sandbox layer. `sandbox.h` without Vulkan types, `SceneObject`, a `LoadModel()` that waits,
-   `CreateSphere()` with automatic GPU upload, `CreateCamera()`, `CreateLight()`, `AddToPipeline()` for all parts of
-   an object. `sandbox.cpp` takes the place of `main.cpp`, for now still with `Initialize()` and `Run()`. Closes the
-   rest of `tr:szenenmanagement`.
-6. `todo`, Rule 1: terminal commands (`Name.Move(x, y, z)`, `Rotate`, `Scale`): a reader thread, a queue, applied on
-   the main thread once per frame, ignored while a model is loading. From here on they help to test the later steps.
-7. `todo`, Rule 1: the initialisation chain. `Renderer::Initialize()` is split into the eight calls, each with its
-   prerequisite check; `CreatePipeline()` requires `InitializeRendering()`.
 8. `todo`, Rule 1: the frame calls. `Renderer::Render()` (about 870 lines) is split into `BeginFrame`, `UpdateScene`,
    `BeginRendering`, `DrawScene`, `EndRendering` and `EndFrame` with the order check; `IsRunning()` and the loop move
    into `sandbox.cpp`. The riskiest step, therefore late: everything it moves is stable by then. Closes `lifecycle`.
@@ -99,6 +87,30 @@ binding 0 and the material push constants, which is exactly the PBR layout the e
   with a pipeline from `template.slang`) successfully; the test lines were removed again. A crash at the first run
   came from stale object files, not from the code (see `docs/BUILD.md`). Closes `einfache_pipeline` and
   `pipeline_shader_automatisierung` at the renderer level. Log: `docs/DELETIONS.md`, "Added code".
+- 2026-09-21, `done`, Rule 1, planned change 5: the sandbox layer. `sandbox.h` (no Vulkan types, no engine classes)
+  with `Sandbox`, `SceneObject`, `Camera`, `Light`; `sandbox_impl.cpp` on top of the tutorial's `Engine`;
+  `sandbox.cpp` (the students' file: `SetupScene()` with camera, "Sun", the Viking room and a sphere, plus `main()`)
+  takes the place of `main.cpp`, which was deleted. `LoadModel()` waits, `CreateSphere()` queues its own upload, a
+  second model keeps the glTF lights of the first; the one change to a tutorial file is `Renderer::GetStaticLights()`.
+  The owner ran it on 2026-09-22: everything works. Closes the rest of `tr:szenenmanagement`. Log:
+  `docs/DELETIONS.md`, "Added code".
+- 2026-09-22, `done`, Rule 1, planned change 6: terminal commands. `Name.Move(x, y, z)`, `Name.Rotate(x, y, z)`
+  (degrees) and `Name.Scale(x, y, z)` typed into the terminal of the running engine move objects and lights;
+  `terminal_commands.h/.cpp` (reader thread on `std::cin`, queue, parser) and the code in `sandbox_impl.cpp` that
+  applies them once per frame through a component on the entity "TerminalCommands" (the owner's choice over a call
+  in `Engine::Update()`, so no tutorial file changed; lines typed while a model loads are applied when loading
+  ends). A wrong line answers with one help line. The owner ran it on 2026-09-22: everything works. Log:
+  `docs/DELETIONS.md`, "Added code".
+- 2026-09-22, `done`, Rule 1, planned change 7: the initialisation chain. `Engine::Initialize()` and
+  `Renderer::Initialize()` were split into the eight calls `InitializeWindow`, `CreateInstance`, `PickDevice`,
+  `CreateSwapChain`, `InitializeRendering`, `CreatePipelines`, `CreateCommandBuffers`, `CreateSyncObjects` (every
+  line of the two bodies kept, one changed tutorial line); `main()` in `sandbox.cpp` makes them, and the sandbox
+  layer checks the order: a missing, misplaced or repeated call is reported by name and the engine does not render.
+  Decisions of the owner: the first call is `InitializeWindow` (`CreateWindow` is a `windows.h` macro); only the
+  calls that need a Vulkan object check the chain (`Run`, `LoadModel`, `CreateSphere`, `AddToPipeline` all eight,
+  `CreatePipeline` up to `CreatePipelines`); `Initialize()` is deleted at all three levels. The owner ran it on
+  2026-09-22: the normal run is unchanged, a swapped pair gives the expected errors and a clean exit. Log:
+  `docs/DELETIONS.md`.
 
 ## Candidates already visible in the code (not decided)
 
@@ -154,10 +166,17 @@ is open. The names of calls and files (`IsRunning`, `AddToPipeline`, `CreateSphe
 - Eight calls in a fixed order: `CreateWindow`, `CreateInstance`, `PickDevice`, `CreateSwapChain`,
   `InitializeRendering`, `CreatePipelines`, `CreateCommandBuffers`, `CreateSyncObjects`. They group the roughly twenty
   create calls of `Renderer::Initialize()`; the engine-internal ones (debug messenger, surface, memory pool,
-  descriptor pool, default textures, light buffers, ImGui) are folded into them.
+  descriptor pool, default textures, light buffers, ImGui) are folded into them. (Implemented with planned change 7
+  on 2026-09-22. The first call is named `InitializeWindow`: `CreateWindow` is a `windows.h` macro, chosen by the
+  owner from the alternatives. The grouping is the table in `docs/ARCHITECTURE.md`, "The initialization chain".)
 - If a student removes a call or changes the order, the engine reports it. Every call checks its own prerequisites
   ("`CreateSwapChain()` needs `PickDevice()`"), and the render loop checks that all eight were made. The error names
-  the missing call; once the optional `ascii_pipeline` exists, its view marks the call as well.
+  the missing call; once the optional `ascii_pipeline` exists, its view marks the call as well. (Implemented in the
+  sandbox layer: `Initialization error: CreateSwapChain() was called, but PickDevice() has not been done.` plus the
+  order with the first error; a repeated call is reported too. Of the scene calls, the owner decided on 2026-09-22
+  that only those that need a Vulkan object check the chain: `LoadModel`, `CreateSphere`, `AddToPipeline` and `Run`
+  need all eight, `CreatePipeline` needs `CreatePipelines`; `CreateCamera`, `CreateLight` and `SetActiveCamera`
+  only create entities and are not guarded.)
 
 ### Pipelines and shaders
 
@@ -169,7 +188,8 @@ is open. The names of calls and files (`IsRunning`, `AddToPipeline`, `CreateSphe
   also means: no depth writes, drawn in the transparent pass.
 - Pipelines are created in the initialisation chain only, after `InitializeRendering()`:
   `CreatePipeline(name, shaderFile, settings)`. `CreatePipelines()` creates the engine's own; the one students see
-  is `"pbr"`, the default of every object.
+  is `"pbr"`, the default of every object. (Since planned change 7 the check is "after `CreatePipelines()`": the
+  named pipelines copy the PBR pipeline layout, which that call creates; the example below already has that order.)
 - The "Use Basic Lighting (Phong)" option is removed entirely (Rule 2): it is only a shader underneath, and Phong
   shading is something the students implement themselves. The deletion covers the checkbox with its status lines,
   `pbrEnabled` in `ImGuiSystem`, the `useBasic` branches of the draw loop, `createGraphicsPipeline()` with its
@@ -219,7 +239,10 @@ is open. The names of calls and files (`IsRunning`, `AddToPipeline`, `CreateSphe
   (`SetStaticLights()` replaces the whole list today).
 - Objects can be modified while rendering: move, rotate (degrees per axis), scale. For now only through terminal
   commands such as `Room.Move(1, 0, 0)`; there is no panel for it. A reader thread queues the lines, `UpdateScene()`
-  applies them on the main thread, and they are ignored while a model is loading.
+  applies them on the main thread, and they are ignored while a model is loading. (Implemented with planned change 6
+  on 2026-09-22: until `UpdateScene()` exists, a component on the entity "TerminalCommands" applies them from the
+  tutorial's `Engine::Update()`, which skips entity updates while loading; the lines typed meanwhile are applied when
+  loading ends. Lights can be moved and rotated as well; cameras are not addressable.)
 
 ### Render loop
 
@@ -295,7 +318,7 @@ void SetupScene(Engine &engine)
 int main()
 {
     Engine engine;
-    engine.CreateWindow("Sandbox", 800, 600);
+    engine.InitializeWindow("Sandbox", 800, 600); // working name in the discussion: CreateWindow (a windows.h macro)
     engine.CreateInstance();
     engine.PickDevice();
     engine.CreateSwapChain();

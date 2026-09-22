@@ -129,6 +129,7 @@ set(SOURCES_COMMON
     src/engine.cpp
     src/scene_loading.cpp
     src/sandbox_impl.cpp
+    src/terminal_commands.cpp
     src/platform.cpp
     src/renderer_core.cpp
     src/renderer_rendering.cpp

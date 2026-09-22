@@ -62,7 +62,11 @@ Engine::~Engine() {
   Cleanup();
 }
 
-bool Engine::Initialize(const std::string& appName, int width, int height, bool enableValidationLayers) {
+// The initialization chain: the body of the tutorial's Initialize() in eight calls (see engine.h).
+// Calls 2 to 8 hand the work to the renderer; call 2 creates it, call 8 completes the engine.
+
+// Initialization chain, call 1: the platform with its window and the input callbacks
+bool Engine::InitializeWindow(const std::string& appName, int width, int height) {
   // Create platform
   // Record main thread identity for deferring destructive operations from background threads
   mainThreadId = std::this_thread::get_id();
@@ -94,9 +98,44 @@ bool Engine::Initialize(const std::string& appName, int width, int height, bool 
     }
   });
 
+  return true;
+}
+
+// Initialization chain, call 2: the renderer with the Vulkan instance, the debug messenger and the surface
+bool Engine::CreateInstance(const std::string& appName, bool enableValidationLayers) {
   // Create renderer
   renderer = std::make_unique<Renderer>(platform.get());
-  if (!renderer->Initialize(appName, enableValidationLayers)) {
+  if (!renderer->CreateInstance(appName, enableValidationLayers)) {
+    return false;
+  }
+
+  return true;
+}
+
+// Initialization chain, calls 3 to 7: the renderer's
+bool Engine::PickDevice(bool enableValidationLayers) {
+  return renderer->PickDevice(enableValidationLayers);
+}
+
+bool Engine::CreateSwapChain() {
+  return renderer->CreateSwapChain();
+}
+
+bool Engine::InitializeRendering() {
+  return renderer->InitializeRendering();
+}
+
+bool Engine::CreatePipelines() {
+  return renderer->CreatePipelines();
+}
+
+bool Engine::CreateCommandBuffers() {
+  return renderer->CreateCommandBuffers();
+}
+
+// Initialization chain, call 8: the renderer's sync objects and threads, then the model loader and ImGui
+bool Engine::CreateSyncObjects() {
+  if (!renderer->CreateSyncObjects()) {
     return false;
   }
 
@@ -106,7 +145,7 @@ bool Engine::Initialize(const std::string& appName, int width, int height, bool 
     renderer->SetModelLoader(modelLoader.get());
 
     // ImGui via constructor
-    imguiSystem = std::make_unique<ImGuiSystem>(renderer.get(), width, height);
+    imguiSystem = std::make_unique<ImGuiSystem>(renderer.get(), platform->GetWindowWidth(), platform->GetWindowHeight());
   } catch (const std::exception& e) {
     std::cerr << "Subsystem initialization failed: " << e.what() << std::endl;
     return false;

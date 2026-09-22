@@ -34,7 +34,7 @@ owner approval); none of them can be closed by deletion alone.
 | `texture_pipeline` | Must | Whole texture life cycle hidden | met (KTX2 only) |
 | `lifecycle` | Must | Students drive the frame life cycle through simplified calls in a fixed order | not met |
 | `einfache_pipeline` | Must | Shader assignment and pipeline state through simplified abstractions | met since planned changes 4 and 5 (2026-09-21): `Sandbox::CreatePipeline()` / `AddToPipeline()` |
-| `tr:szenenmanagement` | Must | Load and transform models, cameras, lights without manual buffers; auto-translate to UBO / push constants | met since planned changes 3 and 5 (2026-09-21); the owner's run of planned change 5 is pending |
+| `tr:szenenmanagement` | Must | Load and transform models, cameras, lights without manual buffers; auto-translate to UBO / push constants | met since planned changes 3 and 5 (2026-09-21; the owner's run of planned change 5 confirmed it on 2026-09-22). Since planned change 6 (2026-09-22) objects and lights can also be moved, rotated and scaled while rendering, through terminal commands |
 | `ascii_pipeline` | Could | ASCII rendering of the pipeline in the terminal | not met |
 | `validation_layer` | Must | Validation layers wired in, messages readable | met |
 | `keine_audio_physik` | Won't | No audio, no physics | met |
@@ -68,9 +68,13 @@ Thesis refs: `ki:1_swapchain`, `ki:2_render pass`.
 preconfigured statically and managed in the background. (Amended by the owner on 2026-09-21: the original entry named
 render pass setup and frame buffers, i.e. render pass objects. The thesis label `ki:2_render pass` is unchanged.)
 
-**Code today.** `Renderer::Initialize()` (`src/renderer_core.cpp`) creates instance, debug messenger, surface, device,
+**Code today.** The initialization chain of `Renderer` (`src/renderer_core.cpp`; until planned change 7 one
+`Renderer::Initialize()`) creates instance, debug messenger, surface, device,
 swap chain, image views, depth image, command pools and sync objects; a resize recreates the swap chain
-(`src/renderer_rendering.cpp`). `sandbox.cpp` only calls `Sandbox::Initialize()`, which calls `Engine::Initialize()`. Dynamic rendering is mandatory: device
+(`src/renderer_rendering.cpp`). Since planned change 7 (2026-09-22) `sandbox.cpp` makes the eight calls of the chain
+(`InitializeWindow`, `CreateInstance`, `PickDevice`, `CreateSwapChain`, `InitializeRendering`, `CreatePipelines`,
+`CreateCommandBuffers`, `CreateSyncObjects`); each is one group of Vulkan steps whose details stay in the engine, and
+a missing or misplaced call is reported by name. Dynamic rendering is mandatory: device
 selection rejects a GPU without the `dynamicRendering` feature and the feature is enabled at device creation
 (`src/renderer_core.cpp`). `setupDynamicRendering()` (`src/renderer_rendering.cpp`, run again on every swap-chain
 recreation) prepares the `vk::RenderingAttachmentInfo` for colour and depth and the `vk::RenderingInfo`; the four passes
@@ -175,9 +179,9 @@ thesis label `ns:1_CB_rendering` is unchanged.)
 
 **Code today.** `Engine::Run()` owns the loop; `Engine::Render()` is private and hands an entity snapshot to
 `Renderer::Render()` (`src/renderer_rendering.cpp`, roughly lines 673-1506), which acquires the image, uploads
-lights, culls, records every pass and ImGui, submits and presents. `sandbox.cpp` calls `Initialize`, `SetupScene`, `Run`
-and nothing else. `GetCurrentCommandBuffer()` returns the raw `vk::raii::CommandBuffer`, the native object, not a
-simplified call.
+lights, culls, records every pass and ImGui, submits and presents. `sandbox.cpp` calls the eight initialization
+calls (planned change 7), `SetupScene` and `Run`, and nothing else. `GetCurrentCommandBuffer()` returns the raw
+`vk::raii::CommandBuffer`, the native object, not a simplified call.
 
 **Gap.** Not met. Needed: the frame API of the student-facing interface in `docs/ROADMAP.md`: six calls with an order
 check (`BeginFrame`, `UpdateScene`, `BeginRendering`, `DrawScene`, `EndRendering`, `EndFrame`) that the student calls
@@ -222,11 +226,13 @@ camPos ...) and the `MaterialProperties` push constants every frame. Camera: `Ca
 optionally overwritten by the first glTF camera. Lights: `KHR_lights_punctual` lights and emissive materials become
 `ExtractedLight` entries in a storage buffer; `Renderer::SetStaticLights()` also accepts a hand-built vector.
 
-**Status since 2026-09-21 (planned change 5).** Met, the owner's run pending. Students load and transform models,
+**Status since 2026-09-21 (planned change 5).** Met; the owner's run confirmed it on 2026-09-22. Students load and transform models,
 cameras and lights through `sandbox.h` without touching a buffer: `LoadModel()` returns a `SceneObject` whose
 `SetPosition` / `SetRotation` / `SetScale` / `Move` / `Rotate` / `Scale` reach every part, `CreateSphere()` builds a
 mesh without a file and queues its GPU upload, `CreateCamera()` / `CreateLight()` return handles with their own
-setters. The three gaps below are closed; they are kept as the record of the state before.
+setters. Since planned change 6 (2026-09-22) the transforms can also be changed while the engine renders, from the
+terminal: `Room.Move(1, 0, 0)`, `Sun.Rotate(0, 30, 0)`, `Sphere.Scale(2, 2, 2)` (`docs/ARCHITECTURE.md`, "Terminal
+commands"). The three gaps below are closed; they are kept as the record of the state before.
 
 **Gap (before planned changes 3 and 5).** Partly met.
 

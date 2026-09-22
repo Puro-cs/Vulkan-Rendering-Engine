@@ -47,7 +47,26 @@ cd src && ../build/windows-msvc/Debug/VulkanRenderEngine.exe
 ```
 
 Window 800x600, title shows frame count, FPS and ms. Controls: `W A S D` move, `Q E` down/up, left mouse drag looks.
-`Esc` is not bound; close the window to quit. The engine renders with one forward rasterization path (ray query,
+`Esc` is not bound; close the window to quit.
+
+Terminal commands (planned change 6, since 2026-09-22): in the terminal the engine was started from, type
+`Room.Move(1, 0, 0)`, `Sun.Rotate(0, 30, 0)` (degrees) or `Sphere.Scale(2, 2, 2)` and press Enter; the change shows
+in the next frame. Names are those of `SetupScene()` (`Room`, `Sphere`, `Sun` in the example scene). A line that is
+not understood answers with one stderr line that lists the commands and the names. The engine's own output goes to
+the same terminal, so the typed line may be interleaved with log lines; it is still read as one line. In Visual
+Studio, the console window that opens with the exe is the terminal to type in.
+
+Start-up (planned change 7, since 2026-09-22): `main()` in `src/sandbox.cpp` initializes the engine with eight calls
+in a fixed order (`InitializeWindow`, `CreateInstance`, `PickDevice`, `CreateSwapChain`, `InitializeRendering`,
+`CreatePipelines`, `CreateCommandBuffers`, `CreateSyncObjects`), then `SetupScene()` and `Run()`. A call that is
+removed, swapped or repeated is reported on stderr by name (`Initialization error: InitializeRendering() was called,
+but CreateSwapChain() has not been done. ...`), the scene calls that need the engine report the same, and `Run()`
+returns without opening the render loop; the process ends normally. The log lines of the set-up steps are the
+tutorial's, in the same order except that "Creating depth resources" and "Creating opaque scene color resources" now
+come before "Creating PBR pipeline" (they belong to `InitializeRendering`), and the first line
+`Renderer::Initialize start` is gone.
+
+The engine renders with one forward rasterization path (ray query,
 Forward+ and planar reflections were removed on 2026-09-20 / 2026-09-21) and one mesh shader, `pbr.slang` (the basic
 lighting path went on 2026-09-21). The "Renderer" ImGui panel shows, top to bottom: "Culling & LOD" (frustum
 culling, distance LOD with two thresholds, sampler anisotropy, culling statistics) and "Tone Mapping & Tuning"
@@ -85,7 +104,8 @@ Besides the validation message, stderr holds two harmless lines of the model loa
 Forcing completion to avoid deadlock.` is the normal end of loading: the `LoadingGuard` in `scene_loading.cpp` calls
 `SetLoading(false)`, which completes the load itself, so `Transitioning from Loading to Active scene` never prints.
 Six blank lines after `Features queried successfully` come from the two-statement `LOGW` macro used under an
-unbraced `if` (tutorial code).
+unbraced `if` (tutorial code). When stdin is redirected from a file or closed (as in the capture command above),
+the terminal reader thread of planned change 6 reads end-of-file at once and ends; nothing is printed for that.
 
 After a shader file is added or deleted, run `cmake --preset windows-msvc` again: the `*.slang` list is a configure-time
 glob, and a build tree that still lists a deleted shader fails in the `shaders` target.

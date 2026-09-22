@@ -21,11 +21,12 @@
 #include "engine.h"
 #include "light_component.h"
 #include "scene_loading.h"
+#include "terminal_commands.h"
 #include "transform_component.h"
 
 #include <cmath>
+#include <functional>
 #include <iostream>
-#include <stdexcept>
 
 // This file implements what sandbox.h declares. It is the only place where the classes of the
 // sandbox file meet the classes of the engine.
@@ -36,6 +37,24 @@ constexpr bool ENABLE_VALIDATION_LAYERS = false;
 #else
 constexpr bool ENABLE_VALIDATION_LAYERS = true;
 #endif
+
+// The calls of the initialization chain, in the order in which they have to be made
+enum InitializationCall
+{
+	InitializeWindowCall,
+	CreateInstanceCall,
+	PickDeviceCall,
+	CreateSwapChainCall,
+	InitializeRenderingCall,
+	CreatePipelinesCall,
+	CreateCommandBuffersCall,
+	CreateSyncObjectsCall,
+	InitializationCallCount
+};
+
+static const char *const INITIALIZATION_CALL_NAMES[InitializationCallCount] = {
+    "InitializeWindow", "CreateInstance", "PickDevice", "CreateSwapChain",
+    "InitializeRendering", "CreatePipelines", "CreateCommandBuffers", "CreateSyncObjects"};
 
 /**
  * @brief The hidden part of the Sandbox: the engine and the objects that were handed out.
@@ -49,6 +68,53 @@ struct Sandbox::Impl
 	std::vector<std::unique_ptr<Light>>       lights;
 
 	bool modelLoaded = false;
+
+	// The initialization chain: which calls are done, and the title of the window (the name the Vulkan
+	// instance is created with)
+	bool        initializationDone[InitializationCallCount] = {};
+	bool        initializationOrderPrinted                  = false;
+	std::string title;
+
+	bool RequireInitialization(const char *caller, int callCount);
+	bool InitializationCall(int call, const std::function<bool()> &work);
+
+	// The commands that are typed into the terminal while the engine renders
+	TerminalCommands terminalCommands;
+
+	bool FindEntities(const std::string &name, std::vector<Entity *> &entities, bool &isLight) const;
+	void PrintTerminalHelp(const std::string &problem) const;
+	void ApplyTerminalCommands();
+};
+
+/**
+ * @brief Component that applies the terminal commands.
+ *
+ * The engine updates the components of all entities once per frame on the main thread, and not
+ * while a model is loading (Engine::Update). That is the moment at which the scene may be changed.
+ */
+class TerminalCommandComponent final : public Component
+{
+  private:
+	std::function<void()> applyCommands;
+
+  public:
+	/**
+	 * @brief Constructor.
+	 * @param applyCommandsFunction The function that applies the commands.
+	 */
+	explicit TerminalCommandComponent(std::function<void()> applyCommandsFunction) :
+	    Component("TerminalCommandComponent"),
+	    applyCommands(std::move(applyCommandsFunction))
+	{}
+
+	/**
+	 * @brief Apply the commands that were typed since the last frame.
+	 * @param deltaTime The time elapsed since the last frame.
+	 */
+	void Update(std::chrono::milliseconds deltaTime) override
+	{
+		applyCommands();
+	}
 };
 
 // The glTF loader names its entities "<model>_Material_<index>_<materialName>"
@@ -263,41 +329,222 @@ void Light::SetConeAngles(float innerDegrees, float outerDegrees)
 	}
 }
 
+// --- Terminal commands ---
+
+// The entities behind a name: all parts of an object, or the entity of a light
+bool Sandbox::Impl::FindEntities(const std::string &name, std::vector<Entity *> &entities, bool &isLight) const
+{
+	for (const auto &object : objects)
+	{
+		if (object->name == name)
+		{
+			entities = object->entities;
+			isLight  = false;
+			return true;
+		}
+	}
+	for (const auto &light : lights)
+	{
+		if (light->entity->GetName() == name)
+		{
+			entities = {light->entity};
+			isLight  = true;
+			return true;
+		}
+	}
+	return false;
+}
+
+// The one line that answers a line that could not be applied
+void Sandbox::Impl::PrintTerminalHelp(const std::string &problem) const
+{
+	std::cerr << "Terminal: " << problem << " Commands: Name.Move(x, y, z), Name.Rotate(x, y, z) in degrees, Name.Scale(x, y, z). Names:";
+	const char *separator = " ";
+	for (const auto &object : objects)
+	{
+		std::cerr << separator << "\"" << object->name << "\"";
+		separator = ", ";
+	}
+	for (const auto &light : lights)
+	{
+		std::cerr << separator << "\"" << light->entity->GetName() << "\"";
+		separator = ", ";
+	}
+	std::cerr << std::endl;
+}
+
+// Called once per frame on the main thread, see TerminalCommandComponent
+void Sandbox::Impl::ApplyTerminalCommands()
+{
+	for (const std::string &line : terminalCommands.TakeLines())
+	{
+		// An empty line is not a command
+		if (line.find_first_not_of(" \t\r") == std::string::npos)
+		{
+			continue;
+		}
+
+		TerminalCommand command;
+		if (!TerminalCommands::Parse(line, command))
+		{
+			PrintTerminalHelp("\"" + line + "\" is not a command.");
+			continue;
+		}
+
+		std::vector<Entity *> entities;
+		bool                  isLight = false;
+		if (!FindEntities(command.name, entities, isLight))
+		{
+			PrintTerminalHelp("there is no object or light \"" + command.name + "\".");
+			continue;
+		}
+		if (isLight && command.type == TerminalCommand::Type::Scale)
+		{
+			PrintTerminalHelp("a light has no size, \"" + command.name + "\" cannot be scaled.");
+			continue;
+		}
+
+		for (Entity *entity : entities)
+		{
+			if (auto *transform = entity->GetComponent<TransformComponent>())
+			{
+				switch (command.type)
+				{
+					case TerminalCommand::Type::Move:
+						transform->Translate(command.values);
+						break;
+					case TerminalCommand::Type::Rotate:
+						transform->Rotate(glm::radians(command.values));
+						break;
+					case TerminalCommand::Type::Scale:
+						transform->Scale(command.values);
+						break;
+				}
+			}
+		}
+	}
+}
+
+// --- The initialization chain ---
+
+// Checks that the first `callCount` calls of the chain are done and reports the first one that is not.
+// A call of the chain requires the calls in front of it; Run() and the scene calls require all of them.
+bool Sandbox::Impl::RequireInitialization(const char *caller, int callCount)
+{
+	for (int call = 0; call < callCount; ++call)
+	{
+		if (initializationDone[call])
+		{
+			continue;
+		}
+		std::cerr << "Initialization error: " << caller << "() was called, but " << INITIALIZATION_CALL_NAMES[call] << "() has not been done.";
+		// The order is printed with the first error only
+		if (!initializationOrderPrinted)
+		{
+			initializationOrderPrinted = true;
+			std::cerr << " The initialization calls, in order:";
+			for (const char *name : INITIALIZATION_CALL_NAMES)
+			{
+				std::cerr << " " << name << "()";
+			}
+		}
+		std::cerr << std::endl;
+		return false;
+	}
+	return true;
+}
+
+// One call of the chain: the order check, then the work of the engine
+bool Sandbox::Impl::InitializationCall(int call, const std::function<bool()> &work)
+{
+	if (initializationDone[call])
+	{
+		std::cerr << "Initialization error: " << INITIALIZATION_CALL_NAMES[call] << "() was called twice." << std::endl;
+		return false;
+	}
+	if (!RequireInitialization(INITIALIZATION_CALL_NAMES[call], call))
+	{
+		return false;
+	}
+	try
+	{
+		if (!work())
+		{
+			std::cerr << INITIALIZATION_CALL_NAMES[call] << "() failed." << std::endl;
+			return false;
+		}
+	}
+	catch (const std::exception &e)
+	{
+		std::cerr << INITIALIZATION_CALL_NAMES[call] << "() failed: " << e.what() << std::endl;
+		return false;
+	}
+	initializationDone[call] = true;
+	return true;
+}
+
 // --- Sandbox ---
 
 Sandbox::Sandbox() :
     impl(std::make_unique<Impl>())
-{}
+{
+	// Enable minidump generation for Release-only crashes (e.g., stack cookie failures / fast-fail).
+	// Writes dumps under the current working directory (the build/run directory).
+	CrashReporter::GetInstance().Initialize("crashes", "SimpleEngine", "1.0.0");
+}
 
 Sandbox::~Sandbox()
 {
 	CrashReporter::GetInstance().Cleanup();
 }
 
-bool Sandbox::Initialize(const std::string &title, int width, int height)
+bool Sandbox::InitializeWindow(const std::string &title, int width, int height)
 {
-	try
-	{
-		// Enable minidump generation for Release-only crashes (e.g., stack cookie failures / fast-fail).
-		// Writes dumps under the current working directory (the build/run directory).
-		CrashReporter::GetInstance().Initialize("crashes", "SimpleEngine", "1.0.0");
+	impl->title = title;
+	return impl->InitializationCall(InitializeWindowCall, [&] { return impl->engine.InitializeWindow(title, width, height); });
+}
 
-		// Initialize the engine
-		if (!impl->engine.Initialize(title, width, height, ENABLE_VALIDATION_LAYERS))
-		{
-			throw std::runtime_error("Failed to initialize engine");
-		}
-		return true;
-	}
-	catch (const std::exception &e)
-	{
-		std::cerr << "Exception: " << e.what() << std::endl;
-		return false;
-	}
+bool Sandbox::CreateInstance()
+{
+	return impl->InitializationCall(CreateInstanceCall, [this] { return impl->engine.CreateInstance(impl->title, ENABLE_VALIDATION_LAYERS); });
+}
+
+bool Sandbox::PickDevice()
+{
+	return impl->InitializationCall(PickDeviceCall, [this] { return impl->engine.PickDevice(ENABLE_VALIDATION_LAYERS); });
+}
+
+bool Sandbox::CreateSwapChain()
+{
+	return impl->InitializationCall(CreateSwapChainCall, [this] { return impl->engine.CreateSwapChain(); });
+}
+
+bool Sandbox::InitializeRendering()
+{
+	return impl->InitializationCall(InitializeRenderingCall, [this] { return impl->engine.InitializeRendering(); });
+}
+
+bool Sandbox::CreatePipelines()
+{
+	return impl->InitializationCall(CreatePipelinesCall, [this] { return impl->engine.CreatePipelines(); });
+}
+
+bool Sandbox::CreateCommandBuffers()
+{
+	return impl->InitializationCall(CreateCommandBuffersCall, [this] { return impl->engine.CreateCommandBuffers(); });
+}
+
+bool Sandbox::CreateSyncObjects()
+{
+	return impl->InitializationCall(CreateSyncObjectsCall, [this] { return impl->engine.CreateSyncObjects(); });
 }
 
 void Sandbox::Run()
 {
+	if (!impl->RequireInitialization("Run", InitializationCallCount))
+	{
+		return;
+	}
 	try
 	{
 		// The engine shows its loading overlay until a load cycle has ended. A scene without a
@@ -309,6 +556,12 @@ void Sandbox::Run()
 				renderer->SetLoading(false);
 			}
 		}
+
+		// Terminal commands such as Room.Move(1, 0, 0): a reader thread collects the lines that are
+		// typed, and the component applies them once per frame on the main thread.
+		Entity *terminalEntity = impl->engine.CreateEntity("TerminalCommands");
+		terminalEntity->AddComponent<TerminalCommandComponent>([this] { impl->ApplyTerminalCommands(); });
+		impl->terminalCommands.Start();
 
 		// Run the engine
 		impl->engine.Run();
@@ -381,9 +634,9 @@ SceneObject *Sandbox::LoadModel(const std::string &name, const std::string &file
 	auto object  = std::make_unique<SceneObject>();
 	object->name = name;
 
-	Renderer *renderer = impl->engine.GetRenderer();
-	if (renderer)
+	if (impl->RequireInitialization("LoadModel", InitializationCallCount))
 	{
+		Renderer *renderer = impl->engine.GetRenderer();
 		// The loader replaces the glTF lights of the renderer. Keep the lights of the models that
 		// were loaded before, so that they can be put back together with the new ones.
 		const std::vector<ExtractedLight> lightsBefore = renderer->GetStaticLights();
@@ -426,17 +679,17 @@ SceneObject *Sandbox::CreateSphere(const std::string &name, float radius)
 	auto object  = std::make_unique<SceneObject>();
 	object->name = name;
 
-	Entity *sphereEntity = impl->engine.CreateEntity(name);
-	sphereEntity->AddComponent<TransformComponent>();
-	auto *mesh = sphereEntity->AddComponent<MeshComponent>();
-	mesh->CreateSphere(radius);
-	object->entities.push_back(sphereEntity);
-
-	// The renderer creates the GPU buffers of a mesh only when it is asked to. Without this
-	// request the sphere would never be drawn.
-	if (auto *renderer = impl->engine.GetRenderer())
+	if (impl->RequireInitialization("CreateSphere", InitializationCallCount))
 	{
-		renderer->EnqueueEntityPreallocationBatch({sphereEntity});
+		Entity *sphereEntity = impl->engine.CreateEntity(name);
+		sphereEntity->AddComponent<TransformComponent>();
+		auto *mesh = sphereEntity->AddComponent<MeshComponent>();
+		mesh->CreateSphere(radius);
+		object->entities.push_back(sphereEntity);
+
+		// The renderer creates the GPU buffers of a mesh only when it is asked to. Without this
+		// request the sphere would never be drawn.
+		impl->engine.GetRenderer()->EnqueueEntityPreallocationBatch({sphereEntity});
 	}
 
 	impl->objects.push_back(std::move(object));
@@ -445,17 +698,21 @@ SceneObject *Sandbox::CreateSphere(const std::string &name, float radius)
 
 bool Sandbox::CreatePipeline(const std::string &name, const std::string &shaderFile, const PipelineSettings &settings)
 {
-	auto *renderer = impl->engine.GetRenderer();
-	return renderer && renderer->CreatePipeline(name, shaderFile, settings);
+	// The named pipelines copy the layout of the engine's PBR pipeline
+	if (!impl->RequireInitialization("CreatePipeline", CreatePipelinesCall + 1))
+	{
+		return false;
+	}
+	return impl->engine.GetRenderer()->CreatePipeline(name, shaderFile, settings);
 }
 
 bool Sandbox::AddToPipeline(const std::string &name, SceneObject *object)
 {
-	auto *renderer = impl->engine.GetRenderer();
-	if (!renderer || !object)
+	if (!object || !impl->RequireInitialization("AddToPipeline", InitializationCallCount))
 	{
 		return false;
 	}
+	auto *renderer = impl->engine.GetRenderer();
 	for (Entity *entity : object->entities)
 	{
 		// An unknown name is reported by the renderer; one report is enough

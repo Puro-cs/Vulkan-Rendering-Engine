@@ -54,11 +54,16 @@ int main()
 {
 	Sandbox sandbox;
 
-	// Initialize the engine
-	if (!sandbox.Initialize("Sandbox", WINDOW_WIDTH, WINDOW_HEIGHT))
-	{
-		return 1;
-	}
+	// The initialization chain: eight calls in this order, each one a group of Vulkan steps.
+	// A call that is missing or out of order is reported, and the engine does not render.
+	sandbox.InitializeWindow("Sandbox", WINDOW_WIDTH, WINDOW_HEIGHT);
+	sandbox.CreateInstance();
+	sandbox.PickDevice();
+	sandbox.CreateSwapChain();
+	sandbox.InitializeRendering();
+	sandbox.CreatePipelines();
+	sandbox.CreateCommandBuffers();
+	sandbox.CreateSyncObjects();
 
 	// Set up the scene
 	SetupScene(sandbox);

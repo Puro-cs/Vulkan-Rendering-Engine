@@ -186,13 +186,54 @@ class Renderer {
 	 */
     ~Renderer();
 
+    // The initialization chain. The tutorial's Initialize() in seven calls, to be made in this order;
+    // each one is a group of the Vulkan set-up steps. The sandbox layer checks the order.
+
     /**
-	 * @brief Initialize the renderer.
+	 * @brief Create the Vulkan instance, the debug messenger and the surface.
 	 * @param appName The name of the application.
 	 * @param enableValidationLayers Whether to enable validation layers.
-	 * @return True if initialization was successful, false otherwise.
+	 * @return True if successful, false otherwise.
 	 */
-    bool Initialize(const std::string& appName, bool enableValidationLayers = true);
+    bool CreateInstance(const std::string& appName, bool enableValidationLayers = true);
+
+    /**
+	 * @brief Pick the physical device, create the logical device and the memory pool.
+	 * @param enableValidationLayers Whether to enable validation layers.
+	 * @return True if successful, false otherwise.
+	 */
+    bool PickDevice(bool enableValidationLayers = true);
+
+    /**
+	 * @brief Create the swap chain and its image views.
+	 * @return True if successful, false otherwise.
+	 */
+    bool CreateSwapChain();
+
+    /**
+	 * @brief Set up dynamic rendering, create the depth image and the off-screen color image.
+	 * @return True if successful, false otherwise.
+	 */
+    bool InitializeRendering();
+
+    /**
+	 * @brief Create the descriptor set layouts, the PBR and composite pipelines and the light buffers.
+	 * @return True if successful, false otherwise.
+	 */
+    bool CreatePipelines();
+
+    /**
+	 * @brief Create the command pool, the descriptor pool, the default textures and the command buffers.
+	 * @return True if successful, false otherwise.
+	 */
+    bool CreateCommandBuffers();
+
+    /**
+	 * @brief Create the semaphores and fences, start the worker threads and the watchdog.
+	 * The renderer is initialized after this call.
+	 * @return True if successful, false otherwise.
+	 */
+    bool CreateSyncObjects();
 
     /**
 	 * @brief Clean up renderer resources.
@@ -664,7 +705,7 @@ class Renderer {
     /**
 	 * @brief Create a named pipeline from a shader file and the settings the user chooses.
 	 *
-	 * Call it after Initialize() and before rendering starts. The pipeline uses the vertex layout,
+	 * Call it after CreatePipelines() and before rendering starts. The pipeline uses the vertex layout,
 	 * the descriptor sets and the push constants of the PBR pipeline; the shader file needs the
 	 * entry points VSMain and PSMain. The name "pbr" is reserved for the engine's own pipelines.
 	 * @param name The name of the pipeline, used by AddToPipeline().

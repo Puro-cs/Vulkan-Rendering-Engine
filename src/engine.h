@@ -53,15 +53,64 @@ class Engine
 	 */
 	~Engine();
 
+	// The initialization chain: Initialize() in eight calls, to be made in this order. The first one
+	// creates the window, the last one completes the engine; the six in between are the renderer's.
+	// The sandbox layer checks the order.
+
 	/**
-	 * @brief Initialize the engine.
+	 * @brief Create the platform with its window and the input callbacks.
 	 * @param appName The name of the application.
 	 * @param width The width of the window.
 	 * @param height The height of the window.
-	 * @param enableValidationLayers Whether to enable Vulkan validation layers.
-	 * @return True if initialization was successful, false otherwise.
+	 * @return True if successful, false otherwise.
 	 */
-	bool Initialize(const std::string &appName, int width, int height, bool enableValidationLayers = true);
+	bool InitializeWindow(const std::string &appName, int width, int height);
+
+	/**
+	 * @brief Create the renderer with the Vulkan instance, the debug messenger and the surface.
+	 * @param appName The name of the application.
+	 * @param enableValidationLayers Whether to enable Vulkan validation layers.
+	 * @return True if successful, false otherwise.
+	 */
+	bool CreateInstance(const std::string &appName, bool enableValidationLayers = true);
+
+	/**
+	 * @brief Pick the physical device, create the logical device and the memory pool.
+	 * @param enableValidationLayers Whether to enable Vulkan validation layers.
+	 * @return True if successful, false otherwise.
+	 */
+	bool PickDevice(bool enableValidationLayers = true);
+
+	/**
+	 * @brief Create the swap chain and its image views.
+	 * @return True if successful, false otherwise.
+	 */
+	bool CreateSwapChain();
+
+	/**
+	 * @brief Set up dynamic rendering, create the depth image and the off-screen color image.
+	 * @return True if successful, false otherwise.
+	 */
+	bool InitializeRendering();
+
+	/**
+	 * @brief Create the descriptor set layouts, the PBR and composite pipelines and the light buffers.
+	 * @return True if successful, false otherwise.
+	 */
+	bool CreatePipelines();
+
+	/**
+	 * @brief Create the command pool, the descriptor pool, the default textures and the command buffers.
+	 * @return True if successful, false otherwise.
+	 */
+	bool CreateCommandBuffers();
+
+	/**
+	 * @brief Create the semaphores and fences, start the worker threads, create the model loader and
+	 * the ImGui system. The engine is initialized after this call.
+	 * @return True if successful, false otherwise.
+	 */
+	bool CreateSyncObjects();
 
 	/**
 	 * @brief Run the main game loop.
