@@ -358,8 +358,7 @@ Decisions of the owner in the approval dialog: a part is named `Room.wood` (two 
 printers was blocked by Smart App Control (by reputation, in the build folder too), so the expected output was
 derived from the fixed widths and shown to the owner as text. Debug and Release builds: 0 errors, 0 warnings, the
 two files that include `sandbox.h` recompiled (`sandbox.cpp`, `sandbox_impl.cpp`), their objects newer than the
-sources, nothing stale. Open: the owner's run (the start-up print, a skipped initialization call, a skipped frame
-call).
+sources, nothing stale. The owner ran it on 2026-09-22: everything works. Step 9 is done.
 
 ## Step 10: README for students (documentation, S)
 

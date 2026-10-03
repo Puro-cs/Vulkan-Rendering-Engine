@@ -18,6 +18,19 @@ also removed the requirement `shader_verwaltung` (own C++ structs handed to shad
 constants in the shader file. The owner also amended `lifecycle`: students call the frame steps in a fixed order, and
 one `DrawScene()` call replaces bundling the draw commands themselves (status unchanged, not met). The planned
 student-facing interface is described in `docs/ROADMAP.md`.
+On 2026-10-03 the thesis was brought in line with these amendments (thesis `docs/THESIS_VS_ENGINE.md`): its TR11
+`shader_verwaltung` row is deleted (the thesis items `fa:2_shader` and `ns:4_material_shader` were kept and reworded:
+template shader plus the fixed shader inputs, parameters as constants), and the owner extended two requirements
+with no code change: `architektur_techstack` now also names vcpkg, libktx and Dear ImGui (thesis WB 8-10), and
+`keine_audio_physik` now lists every component the port removed as out of scope (animation, ray query, planar
+reflections, Forward+, non-Windows platforms), not only audio and physics; and a new Must requirement
+`initialisierungskette` (the eight calls as the students make them, order checked) was split out of
+`basis_infrastruktur`, which is now about hiding only. The other thesis TR keys are unchanged. The
+thesis NS labels were renumbered the same day because a new first item `ns:1_initialisierungskette` (the
+initialization chain as the students call it) was inserted: `ns:1_CB_rendering` → `ns:2_render_lebenszyklus`,
+`ns:2_pipeline_konfiguration` → `ns:3_pipeline_konfiguration`, `ns:3_geometrie_assets` → `ns:4_geometrie_assets`,
+`ns:4_material_shader` → `ns:5_material_shader`, `ns:5_kamera_licht` → `ns:6_kamera_licht`; the "Thesis refs"
+lines below use the new keys.
 Every gap that needs code the tutorial does not have falls under Rule 1 of `docs/CODE_CHANGE_RULES.md` (proposal,
 owner approval); none of them can be closed by deletion alone.
 
@@ -25,29 +38,32 @@ owner approval); none of them can be closed by deletion alone.
 
 | ID | Priority | Requirement | Status |
 |---|---|---|---|
-| `architektur_techstack` | Must | Component architecture; C++20, Vulkan SDK, CMake, GLFW, GLM, tinygltf (glTF 2.0), Slang; Windows 11 | met |
+| `architektur_techstack` | Must | Component architecture; C++20, Vulkan SDK, CMake, GLFW, GLM, tinygltf (glTF 2.0), Slang, vcpkg, libktx, Dear ImGui; Windows 11 | met |
 | `basis_infrastruktur` | Must | Instance, swap chain, dynamic rendering (Vulkan 1.3), colour and depth attachments preconfigured and hidden | met |
 | `synchronisation_speicherverwaltung` | Must | Frames in flight, command buffers, sync objects, GPU memory hidden | met |
 | `pipeline_shader_automatisierung` | Must | Abstract pipeline configurations translated to Vulkan; shaders compiled to `VkShaderModule` | met since planned change 4 (2026-09-21) |
 | `descriptor` | Must | Descriptor pools, set layouts, UBO mapping hidden | met |
 | `input_handling` | Must | GLFW input captured and turned into scene navigation internally | met |
 | `texture_pipeline` | Must | Whole texture life cycle hidden | met (KTX2 only) |
+| `initialisierungskette` | Must | Students set the engine up through a fixed sequence of simplified calls, each a group of Vulkan steps; completeness and order checked, violations reported by name | met since planned change 7 (2026-09-22); added to the thesis on 2026-10-03 |
 | `lifecycle` | Must | Students drive the frame life cycle through simplified calls in a fixed order | met since planned change 8 (2026-09-22; the owner's run confirmed it the same day) |
 | `einfache_pipeline` | Must | Shader assignment and pipeline state through simplified abstractions | met since planned changes 4 and 5 (2026-09-21): `Sandbox::CreatePipeline()` / `AddToPipeline()` |
 | `tr:szenenmanagement` | Must | Load and transform models, cameras, lights without manual buffers; auto-translate to UBO / push constants | met since planned changes 3 and 5 (2026-09-21; the owner's run of planned change 5 confirmed it on 2026-09-22). Since planned change 6 (2026-09-22) objects and lights can also be moved, rotated and scaled while rendering, through terminal commands |
-| `ascii_pipeline` | Could | ASCII rendering of the pipeline in the terminal | met since planned change 9 (2026-09-22); the owner's run is pending |
+| `ascii_pipeline` | Could | ASCII rendering of the pipeline in the terminal | met since planned change 9 (2026-09-22; the owner's run confirmed it the same day) |
 | `validation_layer` | Must | Validation layers wired in, messages readable | met |
-| `keine_audio_physik` | Won't | No audio, no physics | met |
+| `keine_audio_physik` | Won't | No audio, no physics, no animation, no ray query, no planar reflections, no Forward+, no platform other than Windows | met |
 
 ## Requirements in detail
 
 ### `architektur_techstack` — Architecture and technology stack (Must)
 
-Thesis refs: `ap:component`, WB 1-7, `app:bestandsaufnahme_pc-pool`.
+Thesis refs: `ap:component`, WB 1-10, `app:bestandsaufnahme_pc-pool`.
 
 **Requirement.** Component-based architecture. Mandatory technologies: C++20, the current Vulkan SDK, CMake, GLFW, GLM,
-tinygltf (glTF 2.0 as model format) and Slang as shader language. Development must be possible on Windows 11.
-(Amended by the owner on 2026-09-21: the original entry named tinyobjloader.)
+tinygltf (glTF 2.0 as model format), Slang as shader language, the package manager vcpkg (manifest mode), libktx
+(KTX2 textures) and Dear ImGui (the engine's panel). Development must be possible on Windows 11.
+(Amended by the owner on 2026-09-21: the original entry named tinyobjloader. Amended again on 2026-10-03: vcpkg,
+libktx and Dear ImGui added as thesis WB 8-10; they were already in use, see "Code today" and `docs/BUILD.md`.)
 
 **Code today.** `Entity` + `Component` with `TransformComponent`, `CameraComponent`, `MeshComponent` (`src/entity.h`,
 `src/component.h`). `CXX_STANDARD 20` in `CMakeLists.txt`; Vulkan SDK 1.4 through `VULKAN_SDK`; CMake presets for
@@ -65,7 +81,8 @@ Thesis refs: `ki:1_swapchain`, `ki:2_render pass`.
 
 **Requirement.** Instance creation, swap chain management, the pass setup with Vulkan 1.3 dynamic rendering
 (`vkCmdBeginRendering`, no `VkRenderPass` / `VkFramebuffer` objects) and the colour and depth attachments are
-preconfigured statically and managed in the background. (Amended by the owner on 2026-09-21: the original entry named
+preconfigured statically and managed in the background. (Since 2026-10-03 the student-made calls that trigger these
+steps are their own requirement, `initialisierungskette`.) (Amended by the owner on 2026-09-21: the original entry named
 render pass setup and frame buffers, i.e. render pass objects. The thesis label `ki:2_render pass` is unchanged.)
 
 **Code today.** The initialization chain of `Renderer` (`src/renderer_core.cpp`; until planned change 7 one
@@ -167,15 +184,32 @@ file (glTF material or `MeshComponent::SetTexturePath()`).
 albedo and a warning. For student-made assets either PNG decoding (stb is in vcpkg but not wired in, Rule 1) or a
 documented `toktx` conversion step is needed. Same limitation upstream.
 
+### `initialisierungskette` — Control of the initialization (Must)
+
+Thesis refs: `ns:1_initialisierungskette`. Added by the owner on 2026-10-03 as the counterpart of `lifecycle` for the
+start-up: until then the chain was a sentence inside `basis_infrastruktur`, which is now about hiding only.
+
+**Requirement.** Students set the engine up through a fixed sequence of simplified initialization calls, each of
+which bundles a group of Vulkan steps of the core infrastructure. The engine checks that the sequence is complete
+and in order and reports a missing, repeated or misplaced call by name.
+
+**Code today.** Met since planned change 7 (2026-09-22): the eight calls `InitializeWindow`, `CreateInstance`,
+`PickDevice`, `CreateSwapChain`, `InitializeRendering`, `CreatePipelines`, `CreateCommandBuffers`,
+`CreateSyncObjects` in `src/sandbox.cpp`, the order check in `src/sandbox_impl.cpp` (`Initialization error:
+CreateSwapChain() was called, but PickDevice() has not been done.`), the chain view of planned change 9 on the first
+error (`docs/ARCHITECTURE.md`, "The initialization chain", "Terminal output").
+
+**Gap.** None.
+
 ### `lifecycle` — Control of the render life cycle (Must)
 
-Thesis refs: `ns:1_CB_rendering`.
+Thesis refs: `ns:2_render_lebenszyklus` (until 2026-10-03 `ns:1_CB_rendering`).
 
 **Requirement.** Students control the rendering flow explicitly: they define the frame life cycle through simplified
 calls in a fixed order (begin the frame, update the scene, begin rendering, draw the scene, end rendering, end the
 frame). Recording the individual draw commands into the command buffer stays inside the engine. (Amended by the owner
 on 2026-09-21: in the original entry the students bundled the draw commands in a command buffer themselves. The
-thesis label `ns:1_CB_rendering` is unchanged.)
+thesis label was `ns:1_CB_rendering` until 2026-10-03.)
 
 **Status since 2026-09-22 (planned change 8).** Met; the owner's run confirmed it on 2026-09-22. `main()` in `sandbox.cpp`
 renders with `while (sandbox.IsRunning()) { BeginFrame(); UpdateScene(); BeginRendering(); DrawScene();
@@ -199,7 +233,7 @@ from an own loop, while acquire, the recording of the draw commands, submit and 
 
 ### `einfache_pipeline` — Explicit but simplified pipeline configuration (Must)
 
-Thesis refs: `ns:2_pipeline_konfiguration`.
+Thesis refs: `ns:3_pipeline_konfiguration` (until 2026-10-03 `ns:2_pipeline_konfiguration`).
 
 **Requirement.** Students assign shaders and define pipeline state through simplified abstractions, without writing
 native Vulkan structures.
@@ -223,7 +257,7 @@ material. Rule 1.
 
 ### `tr:szenenmanagement` — Scene management and data handling (Must)
 
-Thesis refs: `fa:1_szenenmanagement`, `ns:3_geometrie_assets`, `ns:5_kamera_licht`.
+Thesis refs: `fa:1_szenenmanagement`, `ns:4_geometrie_assets`, `ns:6_kamera_licht` (until 2026-10-03 `ns:3_…`, `ns:5_…`).
 
 **Requirement.** Load and transform 3D models, cameras and lights without allocating vertex or index buffers by hand;
 the engine translates the scene data into UBOs / push constants and provides them to the shaders.
@@ -267,7 +301,7 @@ Thesis refs: `vp:pipeline`.
 
 **Requirement.** At run time the Vulkan render pipeline is drawn as ASCII art in the terminal to support learning.
 
-**Status since 2026-09-22 (planned change 9).** Met; the owner's run is pending. The first `IsRunning()` prints, once,
+**Status since 2026-09-22 (planned change 9).** Met; the owner's run confirmed it on 2026-09-22. The first `IsRunning()` prints, once,
 the initialization chain (one line per call, `[ok]`, with what the call does), every pipeline as a block of its seven
 stages from the input assembly to the attachments (the four settings of an own pipeline marked `yours`, the rest
 `fixed`; the objects that are drawn with it) and the six frame calls; an initialization error or a frame sequence
@@ -298,14 +332,20 @@ second one, the `Int64` capability in `ray_query.spv`, went away with that shade
 owner's Debug run of 2026-09-21). A clean start-up would help students tell their own errors apart. Validation is a compile-time
 switch, not a runtime option.
 
-### `keine_audio_physik` — No audio and physics components (Won't)
+### `keine_audio_physik` — No components outside the teaching scope (Won't)
 
-Thesis refs: `sec:systemgrenzen_abgrenzung`.
+Thesis refs: `sec:systemgrenzen_abgrenzung`, `ak:4_fokus_lokal`.
 
-**Requirement.** The engine has no audio and no physics components.
+**Requirement.** The engine has no audio components, no physics components, no animation, none of the template's
+advanced rendering techniques (ray tracing via ray query, planar reflections, the Forward+ light-culling
+optimisation) and no platform other than Windows. (Amended by the owner on 2026-10-03: the original entry named audio and physics only; the thesis
+now lists every removed component under its section 6.1 and this requirement, with the justification that they lie
+outside the seminar learning goals and the focus on local lighting models. The key is unchanged.)
 
-**Code today.** Physics (`physics_system.*`, ball demo), audio (`audio_system.*`, HRTF compute) and every reference
-to them are deleted (`docs/DELETIONS.md`).
+**Code today.** Physics (`physics_system.*`, ball demo), audio (`audio_system.*`, HRTF compute), glTF animation, the
+ray-query render mode with the acceleration structures and the raster shadow option, planar reflections, Forward+
+with its depth pre-pass, and the Android / direct-to-display / Linux / macOS paths and every reference to them are
+deleted (`docs/ARCHITECTURE.md`, intro; `docs/DELETIONS.md`).
 
 **Gap.** None.
 

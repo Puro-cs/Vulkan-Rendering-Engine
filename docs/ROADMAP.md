@@ -14,19 +14,9 @@ The owner approved this order on 2026-09-21. Implementation started the same day
 that step is implemented. The target is the student-facing interface at the end of this file. Logging, builds and
 runs follow `docs/WORKFLOW.md`. Steps 1 and 2 only delete code (step 2 also adds the template shader); step 3 swaps a
 shader and adds the light component; the student-facing interface starts with step 4. The sub-steps, the code each
-step touches and its checks are in `docs/IMPLEMENTATION_PLAN.md`. Steps 1 to 8 are done and listed under "Done"; the
-remaining steps keep their numbers, because this file and the plan refer to them by number.
+step touches and its checks are in `docs/IMPLEMENTATION_PLAN.md`. Steps 1 to 9 are done and listed under "Done"; the
+remaining step keeps its number, because this file and the plan refer to it by number.
 
-9. `in progress` since 2026-09-22: implemented after the owner approved the diff (254 added, 16 removed lines over
-   `sandbox.h` and `sandbox_impl.cpp`, test-compiled before): the first `IsRunning()` prints the initialisation chain
-   (`[ok]` per call, with what the call does), every pipeline in the form below with its objects, and the frame
-   sequence; the error paths of planned changes 7 and 8 print the same list on stderr with the failed call marked
-   (`[!!] PickDevice            <- missing`, `<- called twice`, `<- failed`). Decisions of the owner in the approval
-   dialog: a part is named `Room.wood` (two lines in `Part()`), the box column is printed at start-up too. Open: the
-   owner's run (the start-up print, a skipped initialisation call, a skipped frame call). Details:
-   `docs/IMPLEMENTATION_PLAN.md`, log: `docs/DELETIONS.md`.
-   Rule 1: terminal output. The start-up print of the initialisation chain, of the pipelines with their
-   objects and of the frame sequence; the same views on an error. Closes `ascii_pipeline` (Could).
 10. `todo`, documentation: a README for students: the shape of `sandbox.cpp`, what a shader receives and the template,
     a new shader file needs a CMake re-configure, PNG to KTX2 with `toktx`, the terminal commands.
 
@@ -125,6 +115,15 @@ binding 0 and the material push constants, which is exactly the PBR layout the e
   `Run()` and `Render()` are deleted at all levels. Extra approved by the owner: the first `IsRunning()` refuses to
   start without an active camera. The owner ran 8a ("looks fine") and 8b (everything works) on 2026-09-22. Closes
   `lifecycle`. Details: `docs/IMPLEMENTATION_PLAN.md`, log: `docs/DELETIONS.md`.
+- 2026-09-22, `done`, Rule 1, planned change 9: terminal output. The first `IsRunning()` prints, once and after the
+  start-up log, the initialisation chain (`[ok]` per call with what the call does), every pipeline as the block of
+  the section "Terminal output" below with the objects it draws (the four settings of an own pipeline marked
+  `yours`, everything else `fixed`), and the six frame calls; an initialisation error or a frame sequence error
+  prints the same list on stderr with the failed call marked (`[!!] PickDevice            <- missing`, `<- called
+  twice`, `<- failed`). All of it is own code in `sandbox_impl.cpp` (254 added, 16 removed lines together with
+  `sandbox.h`); no tutorial file changed. Decisions of the owner in the approval dialog: a part is named `Room.wood`,
+  the box column is printed at start-up too. The owner ran it on 2026-09-22: everything works. Closes
+  `ascii_pipeline`. Details: `docs/IMPLEMENTATION_PLAN.md`, log: `docs/DELETIONS.md`, "Added code".
 
 ## Candidates already visible in the code (not decided)
 
