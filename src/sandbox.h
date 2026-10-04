@@ -198,15 +198,15 @@ class Light
 /**
  * @brief The engine as the sandbox file sees it.
  *
- * Every group of Vulkan steps is one call. The engine is initialized by the eight calls of the
- * initialization chain, in the order in which they are declared below; a call that is made out of
- * order, twice, or without the calls before it, reports the error and stops the initialization: it and
- * every call after it do nothing. All scene objects
- * are created in SetupScene(), after the chain and before rendering starts. The render loop is
- * `while (IsRunning())` around the six frame calls, in the order in which they are declared below; a
- * frame call that is missing or out of order is reported by the next call, and rendering stops. The
- * objects that the Create... and Load... calls return belong to the engine; they stay valid until the
- * Sandbox is destroyed.
+ * Every group of Vulkan steps is one call. The calls are declared in alphabetical order: which of them
+ * the sandbox file needs, and in which order, is explained in the wiki (docs/wiki). The engine is
+ * initialized by the calls of the initialization chain; a call that is made out of order, twice, or
+ * without the calls before it, reports the error and stops the initialization: it and every call
+ * after it do nothing. All scene objects are created in SetupScene(), after the chain and before
+ * rendering starts. The render loop is `while (IsRunning())` around the frame calls; a frame call that
+ * is missing or out of order is reported by the next call, and rendering stops. The objects that the
+ * Create... and Load... calls return belong to the engine; they stay valid until the Sandbox is
+ * destroyed.
  */
 class Sandbox
 {
@@ -214,52 +214,58 @@ class Sandbox
 	Sandbox();
 	~Sandbox();
 
-	// --- The initialization chain: eight calls in this order ---
+	/**
+	 * @brief Scene: add all parts of an object to a pipeline.
+	 *
+	 * An object that was added to no pipeline is drawn with "pbr". An object that was added to several
+	 * pipelines is drawn once per pipeline, in the order in which the pipelines were created.
+	 * @param name The name of the pipeline.
+	 * @param object The object to add.
+	 * @return True if the object was added, false if there is no pipeline with this name.
+	 */
+	bool AddToPipeline(const std::string &name, SceneObject *object);
 
 	/**
-	 * @brief Initialization call 1: the window and its input callbacks.
-	 * @param title The title of the window.
-	 * @param width The width of the window.
-	 * @param height The height of the window.
+	 * @brief Frame call: wait until the GPU is done with this frame slot, acquire a swap chain image.
+	 */
+	void BeginFrame();
+
+	/**
+	 * @brief Frame call: begin the command buffer, clear the color and depth attachments.
+	 */
+	void BeginRendering();
+
+	/**
+	 * @brief Scene: create a camera.
+	 * @param name The name of the camera.
+	 * @return The camera.
+	 */
+	Camera *CreateCamera(const std::string &name);
+
+	/**
+	 * @brief Initialization call: the command pool, the descriptor pool, the default textures and the
+	 * command buffers.
 	 * @return True if the call was made in order and succeeded, false otherwise.
 	 */
-	bool InitializeWindow(const std::string &title, int width, int height);
+	bool CreateCommandBuffers();
 
 	/**
-	 * @brief Initialization call 2: the Vulkan instance, the debug messenger and the window surface.
+	 * @brief Initialization call: the Vulkan instance, the debug messenger and the window surface.
 	 * @return True if the call was made in order and succeeded, false otherwise.
 	 */
 	bool CreateInstance();
 
 	/**
-	 * @brief Initialization call 3: the physical device (the GPU), the logical device with its queues
-	 * and the memory pool.
-	 * @return True if the call was made in order and succeeded, false otherwise.
+	 * @brief Scene: create a light.
+	 * @param name The name of the light.
+	 * @param type The type of the light.
+	 * @return The light.
 	 */
-	bool PickDevice();
+	Light *CreateLight(const std::string &name, LightType type);
 
 	/**
-	 * @brief Initialization call 4: the swap chain and its image views.
-	 * @return True if the call was made in order and succeeded, false otherwise.
-	 */
-	bool CreateSwapChain();
-
-	/**
-	 * @brief Initialization call 5: dynamic rendering, the depth image and the off-screen color image.
-	 * @return True if the call was made in order and succeeded, false otherwise.
-	 */
-	bool InitializeRendering();
-
-	/**
-	 * @brief Initialization call 6: the engine's own pipelines ("pbr" and the composite pass) with their
-	 * descriptor set layouts, and the light buffers. Own pipelines are created after this call.
-	 * @return True if the call was made in order and succeeded, false otherwise.
-	 */
-	bool CreatePipelines();
-
-	/**
-	 * @brief Create an own pipeline from a shader file. Not part of the chain, but it needs
-	 * CreatePipelines(), which creates the layout that every pipeline shares.
+	 * @brief Create an own pipeline from a shader file. It shares the layout of the engine's
+	 * pipelines, which have to exist.
 	 * @param name The name of the pipeline, used by AddToPipeline(). "pbr" is the pipeline of the engine.
 	 * @param shaderFile The shader, e.g. "shaders/toon.slang". It needs the entry points VSMain and PSMain.
 	 * @param settings Cull mode, depth test and blending.
@@ -268,20 +274,63 @@ class Sandbox
 	bool CreatePipeline(const std::string &name, const std::string &shaderFile, const PipelineSettings &settings = {});
 
 	/**
-	 * @brief Initialization call 7: the command pool, the descriptor pool, the default textures and the
-	 * command buffers.
+	 * @brief Initialization call: the engine's own pipelines ("pbr" and the composite pass) with their
+	 * descriptor set layouts, and the light buffers.
 	 * @return True if the call was made in order and succeeded, false otherwise.
 	 */
-	bool CreateCommandBuffers();
+	bool CreatePipelines();
 
 	/**
-	 * @brief Initialization call 8: the semaphores and fences, the worker threads, the model loader and
-	 * the UI. The engine is ready after this call.
+	 * @brief Scene: create a sphere.
+	 * @param name The name of the object.
+	 * @param radius The radius of the sphere.
+	 * @return The object.
+	 */
+	SceneObject *CreateSphere(const std::string &name, float radius);
+
+	/**
+	 * @brief Initialization call: the swap chain and its image views.
+	 * @return True if the call was made in order and succeeded, false otherwise.
+	 */
+	bool CreateSwapChain();
+
+	/**
+	 * @brief Initialization call: the semaphores and fences, the worker threads, the model loader and
+	 * the UI.
 	 * @return True if the call was made in order and succeeded, false otherwise.
 	 */
 	bool CreateSyncObjects();
 
-	// --- The render loop: while (IsRunning()) { the six frame calls in this order } ---
+	/**
+	 * @brief Frame call: per object, bind its pipeline, descriptor sets and buffers, then draw; the
+	 * tone mapping of the opaque scene; the transparent objects on top.
+	 */
+	void DrawScene();
+
+	/**
+	 * @brief Frame call: submit the command buffer, present the image.
+	 */
+	void EndFrame();
+
+	/**
+	 * @brief Frame call: the engine's UI on top, end the command buffer.
+	 */
+	void EndRendering();
+
+	/**
+	 * @brief Initialization call: dynamic rendering, the depth image and the off-screen color image.
+	 * @return True if the call was made in order and succeeded, false otherwise.
+	 */
+	bool InitializeRendering();
+
+	/**
+	 * @brief Initialization call: the window and its input callbacks.
+	 * @param title The title of the window.
+	 * @param width The width of the window.
+	 * @param height The height of the window.
+	 * @return True if the call was made in order and succeeded, false otherwise.
+	 */
+	bool InitializeWindow(const std::string &title, int width, int height);
 
 	/**
 	 * @brief The loop condition: true until the window is closed. Needs the complete initialization
@@ -294,63 +343,8 @@ class Sandbox
 	bool IsRunning();
 
 	/**
-	 * @brief Frame call 1: wait until the GPU is done with this frame slot, acquire a swap chain image.
-	 */
-	void BeginFrame();
-
-	/**
-	 * @brief Frame call 2: camera controls, terminal commands, the lights and the transforms of all
-	 * objects into the uniform buffers.
-	 */
-	void UpdateScene();
-
-	/**
-	 * @brief Frame call 3: begin the command buffer, clear the color and depth attachments.
-	 */
-	void BeginRendering();
-
-	/**
-	 * @brief Frame call 4: per object, bind its pipeline, descriptor sets and buffers, then draw; the
-	 * tone mapping of the opaque scene; the transparent objects on top.
-	 */
-	void DrawScene();
-
-	/**
-	 * @brief Frame call 5: the engine's UI on top, end the command buffer.
-	 */
-	void EndRendering();
-
-	/**
-	 * @brief Frame call 6: submit the command buffer, present the image.
-	 */
-	void EndFrame();
-
-	// --- The scene: called in SetupScene(), after the initialization chain ---
-
-	/**
-	 * @brief Create a camera.
-	 * @param name The name of the camera.
-	 * @return The camera.
-	 */
-	Camera *CreateCamera(const std::string &name);
-
-	/**
-	 * @brief Set the camera the scene is rendered with.
-	 * @param camera The camera.
-	 */
-	void SetActiveCamera(Camera *camera);
-
-	/**
-	 * @brief Create a light.
-	 * @param name The name of the light.
-	 * @param type The type of the light.
-	 * @return The light.
-	 */
-	Light *CreateLight(const std::string &name, LightType type);
-
-	/**
-	 * @brief Load a glTF model. The call waits until the model is loaded; its meshes and textures
-	 * are uploaded during the first frames, behind the loading overlay of the engine.
+	 * @brief Scene: load a glTF model. The call waits until the model is loaded; its meshes and
+	 * textures are uploaded during the first frames, behind the loading overlay of the engine.
 	 * @param name The name of the object.
 	 * @param file The path of the .gltf file. Its textures have to be KTX2 files.
 	 * @return The object. If the model cannot be loaded, the error is printed and an empty object
@@ -359,23 +353,23 @@ class Sandbox
 	SceneObject *LoadModel(const std::string &name, const std::string &file);
 
 	/**
-	 * @brief Create a sphere.
-	 * @param name The name of the object.
-	 * @param radius The radius of the sphere.
-	 * @return The object.
+	 * @brief Initialization call: the physical device (the GPU), the logical device with its queues
+	 * and the memory pool.
+	 * @return True if the call was made in order and succeeded, false otherwise.
 	 */
-	SceneObject *CreateSphere(const std::string &name, float radius);
+	bool PickDevice();
 
 	/**
-	 * @brief Add all parts of an object to a pipeline.
-	 *
-	 * An object that was added to no pipeline is drawn with "pbr". An object that was added to several
-	 * pipelines is drawn once per pipeline, in the order in which the pipelines were created.
-	 * @param name The name of the pipeline.
-	 * @param object The object to add.
-	 * @return True if the object was added, false if there is no pipeline with this name.
+	 * @brief Scene: set the camera the scene is rendered with.
+	 * @param camera The camera.
 	 */
-	bool AddToPipeline(const std::string &name, SceneObject *object);
+	void SetActiveCamera(Camera *camera);
+
+	/**
+	 * @brief Frame call: camera controls, terminal commands, the lights and the transforms of all
+	 * objects into the uniform buffers.
+	 */
+	void UpdateScene();
 
   private:
 	struct Impl;
