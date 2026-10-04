@@ -36,7 +36,7 @@ sandbox.cpp (the students' file: SetupScene() and main(); includes only sandbox.
     ResourceManager (generic handle store; created but no subsystem uses it)
     entities: vector<unique_ptr<Entity>>, each Entity = list of Component
       TransformComponent   position / rotation / scale -> model matrix
-      CameraComponent      view / projection, aspect ratio set by Engine on resize
+      CameraComponent      view / projection, aspect ratio set by Sandbox::SetActiveCamera() and by Engine on resize
       MeshComponent        CPU-side vertices, indices, instances, material id
       LightComponent       type, colour, intensity, range, cone angles; position and direction from the
                            entity's transform (shines along its -Z axis). Own code, added 2026-09-21
@@ -69,7 +69,11 @@ listing: `sandbox.cpp` pulls in `sandbox.h`, `pipeline_settings.h`, glm and the 
 
 A failed `LoadModel()` and an unknown `Part()` print an error and return an empty object, so that calls on it do
 nothing. A second `LoadModel()` appends its glTF lights to those of the first (the tutorial's loader replaces the
-list). `CreateSphere()` queues the GPU upload itself. `Run()` ends the engine's initial load cycle when no model was
+list). `CreateSphere()` queues the GPU upload itself and, since 2026-10-04, turns the triangle order of the tutorial's
+sphere around: the engine's pipelines take counter-clockwise triangles as the front, the tutorial's sphere lists them
+clockwise and was drawn inside out. `SetActiveCamera()` gives the camera the aspect ratio of the window (since
+2026-10-04; the engine itself only sets it when the window is resized).
+`Run()` ends the engine's initial load cycle when no model was
 loaded; without that the loading overlay would stay forever. Since planned change 8 the render loop is in `main()`
 (see "The render loop"); `Run()` no longer exists.
 
@@ -234,7 +238,7 @@ mesh layout, the PBR one; the pipelines of planned change 4 will use it too:
 
 | Input | Content |
 |---|---|
-| Vertex attributes | locations 0 to 3: position, normal, UV, tangent; 4 to 7: per-instance model matrix; 8 to 10: per-instance normal matrix |
+| Vertex attributes | locations 0 to 3: position, normal, UV, tangent; 4 to 7: per-instance model matrix; 8 to 10: per-instance normal matrix, one column per location. A shader that assembles it with `float3x3(a, b, c)` has to transpose the result, because that Slang constructor takes rows (`pbr.slang` does so since 2026-10-04) |
 | Set 0, binding 0 | `UniformBufferObject` (model, view, proj, camPos, exposure, lightCount, screenDimensions, ...) |
 | Set 0, binding 1 | base colour texture |
 | Set 0, bindings 2 to 5 | metallic-roughness, normal, occlusion, emissive textures |

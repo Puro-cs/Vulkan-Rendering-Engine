@@ -914,7 +914,7 @@ Camera *Sandbox::CreateCamera(const std::string &name)
 
 	// Add a camera component to the camera entity
 	cameraEntity->AddComponent<CameraComponent>();
-	// Camera aspect ratio will be set by the engine during initialization or resize events.
+	// The aspect ratio is set in SetActiveCamera() and by the engine when the window is resized.
 
 	auto camera    = std::make_unique<Camera>();
 	camera->entity = cameraEntity;
@@ -928,8 +928,24 @@ void Sandbox::SetActiveCamera(Camera *camera)
 	{
 		return;
 	}
+	auto *cameraComponent = camera->entity->GetComponent<CameraComponent>();
+
 	// Set the camera as the active camera
-	impl->engine.SetActiveCamera(camera->entity->GetComponent<CameraComponent>());
+	impl->engine.SetActiveCamera(cameraComponent);
+
+	// The engine sets the aspect ratio of the active camera only when the window is resized
+	// (Engine::HandleResize). Until then the camera would keep its default of 16:9 and squeeze the
+	// picture in a window of another shape, so it gets the aspect ratio of the window here. Before
+	// InitializeWindow() there is no window yet.
+	if (const Platform *platform = impl->engine.GetPlatform())
+	{
+		const int width  = platform->GetWindowWidth();
+		const int height = platform->GetWindowHeight();
+		if (width > 0 && height > 0)
+		{
+			cameraComponent->SetAspectRatio(static_cast<float>(width) / static_cast<float>(height));
+		}
+	}
 }
 
 Light *Sandbox::CreateLight(const std::string &name, LightType type)
@@ -1017,6 +1033,16 @@ SceneObject *Sandbox::CreateSphere(const std::string &name, float radius)
 		sphereEntity->AddComponent<TransformComponent>();
 		auto *mesh = sphereEntity->AddComponent<MeshComponent>();
 		mesh->CreateSphere(radius);
+
+		// The engine draws a triangle whose corners run counter-clockwise, seen from outside, and
+		// removes the others as back faces; the loaded models list their corners that way.
+		// CreateSphere() lists them clockwise, so two corners of every triangle change places here.
+		std::vector<uint32_t> indices = mesh->GetIndices();
+		for (size_t i = 0; i + 2 < indices.size(); i += 3)
+		{
+			std::swap(indices[i + 1], indices[i + 2]);
+		}
+		mesh->SetIndices(indices);
 		object->entities.push_back(sphereEntity);
 
 		// The renderer creates the GPU buffers of a mesh only when it is asked to. Without this

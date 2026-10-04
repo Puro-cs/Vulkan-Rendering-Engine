@@ -71,7 +71,7 @@ VSOutput VSMain(VSInput input)
 
     // Transform normals correctly: first by the per-instance normal matrix,
     // then by the entity model 3x3 (avoid double-applying instance transform).
-    float3x3 instNormal = float3x3(input.InstanceNormal0.xyz, input.InstanceNormal1.xyz, input.InstanceNormal2.xyz);
+    float3x3 instNormal = transpose(float3x3(input.InstanceNormal0.xyz, input.InstanceNormal1.xyz, input.InstanceNormal2.xyz));
     float3x3 model3x3 = (float3x3)ubo.model;
     float3 worldNormal = normalize(mul(model3x3, mul(instNormal, input.Normal)));
     output.Normal = worldNormal;
