@@ -197,7 +197,10 @@ and in order and reports a missing, repeated or misplaced call by name.
 `PickDevice`, `CreateSwapChain`, `InitializeRendering`, `CreatePipelines`, `CreateCommandBuffers`,
 `CreateSyncObjects` in `src/sandbox.cpp`, the order check in `src/sandbox_impl.cpp` (`Initialization error:
 CreateSwapChain() was called, but PickDevice() has not been done.`), the chain view of planned change 9 on the first
-error (`docs/ARCHITECTURE.md`, "The initialization chain", "Terminal output").
+error (`docs/ARCHITECTURE.md`, "The initialization chain", "Terminal output"). Since 2026-10-04 the report names
+the call that could not run and the reason, not the missing call (`Initialization error: CreateSwapChain() cannot
+run yet. Initialization stopped.`), so that the students find the order in the wiki rather than on the terminal;
+"by name" in the requirement text is met by the name of the misplaced call.
 
 **Gap.** None.
 
@@ -216,7 +219,8 @@ renders with `while (sandbox.IsRunning()) { BeginFrame(); UpdateScene(); BeginRe
 EndRendering(); EndFrame(); }`: the six calls are the six parts of the tutorial's `Renderer::Render()` (every line
 kept, `docs/ARCHITECTURE.md`, "One frame"), `UpdateScene()` preceded by the tutorial's `Engine::Update()`. The
 sandbox layer checks the order: a call out of order prints `Frame sequence error: <call>() was called, <expected>()
-was expected. Rendering stopped.` and the loop ends. Acquire, the recording of the draw commands (one `DrawScene()`
+was expected. Rendering stopped.` (since 2026-10-04: `Frame sequence error: <call>() cannot run yet. Rendering
+stopped.` with the reason, without the expected call) and the loop ends. Acquire, the recording of the draw commands (one `DrawScene()`
 for the whole scene, as amended), submit and synchronisation stay inside `Renderer`. The paragraphs below describe
 the state before.
 
@@ -305,7 +309,9 @@ Thesis refs: `vp:pipeline`.
 the initialization chain (one line per call, `[ok]`, with what the call does), every pipeline as a block of its seven
 stages from the input assembly to the attachments (the four settings of an own pipeline marked `yours`, the rest
 `fixed`; the objects that are drawn with it) and the six frame calls; an initialization error or a frame sequence
-error prints the same list on stderr with the failed call marked (`[!!] PickDevice            <- missing`). It is
+error prints the same list on stderr with the failed call marked (`[!!] PickDevice            <- missing`; since
+2026-10-04 only the calls the sandbox file has made, the one that could not run marked with the reason, and the
+frame calls after the first complete frame instead of at start-up, `docs/ARCHITECTURE.md`, "Terminal output"). It is
 text with fixed columns rather than a drawing of the GPU pipeline, in the form the owner chose in `docs/ROADMAP.md`,
 "Terminal output". The paragraphs below describe the state before.
 

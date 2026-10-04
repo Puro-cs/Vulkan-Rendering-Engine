@@ -124,6 +124,17 @@ binding 0 and the material push constants, which is exactly the PBR layout the e
   `sandbox.h`); no tutorial file changed. Decisions of the owner in the approval dialog: a part is named `Room.wood`,
   the box column is printed at start-up too. The owner ran it on 2026-09-22: everything works. Closes
   `ascii_pipeline`. Details: `docs/IMPLEMENTATION_PLAN.md`, log: `docs/DELETIONS.md`, "Added code".
+- 2026-10-04, `done`, Rule 1: the terminal output no longer gives the solution away. The students are to find the
+  calls and their order in the wiki (`docs/wiki`, still to be written), starting from an empty sandbox file on the
+  branch `learning`; the output of planned change 9 named the missing call, marked it and listed every call after
+  it, so the order could be read off the terminal run by run. Now a view only shows calls the sandbox file has made:
+  the done calls as `[ok]`, then the call that could not run as `[!!]` with a reason in Vulkan terms ("a swap chain
+  is created by a logical device ... No device exists yet."), never the name of a missing call, and nothing below
+  it. The first initialization error stops the initialization (later calls are silent); the frame sequence is
+  printed after the first complete frame instead of at start-up. Decisions of the owner: the reason stays ("too
+  early" alone would not teach anything); the branch `learning` gets a `sandbox.h` with the calls in alphabetical
+  order and an empty `sandbox.cpp`. The assistant ran nine wrong sandbox files and the normal one (Release). Log:
+  `docs/DELETIONS.md`, "Added code"; form: `docs/ARCHITECTURE.md`, "Terminal output".
 
 ## Candidates already visible in the code (not decided)
 
@@ -187,7 +198,8 @@ is open. The names of calls and files (`IsRunning`, `AddToPipeline`, `CreateSphe
   the missing call; once the optional `ascii_pipeline` exists, its view marks the call as well. (Implemented in the
   sandbox layer: `Initialization error: CreateSwapChain() was called, but PickDevice() has not been done.` plus,
   with the first error, the chain view of planned change 9 with the missing call marked; a repeated call is
-  reported too. Of the scene calls, the owner decided on 2026-09-22
+  reported too. Since 2026-10-04 the error names the call that could not run and gives the reason instead of the
+  missing call, see "Done". Of the scene calls, the owner decided on 2026-09-22
   that only those that need a Vulkan object check the chain: `LoadModel`, `CreateSphere`, `AddToPipeline` and `Run`
   need all eight, `CreatePipeline` needs `CreatePipelines`; `CreateCamera`, `CreateLight` and `SetActiveCamera`
   only create entities and are not guarded.)
@@ -301,7 +313,9 @@ Pipeline "toon"    shaders/toon.spv
   Objects            Room
 ```
 
-A wrong call order (the initialisation chain is reported in the same form):
+A wrong call order (the initialisation chain is reported in the same form). This is the form of the design
+discussion, kept as the record of it; it was replaced on 2026-10-04 because it names the missing call and lists the
+calls after it. The form in use is in `docs/ARCHITECTURE.md`, "Terminal output":
 
 ```
 Frame sequence error: DrawScene() was called, BeginRendering() was expected. Rendering stopped.

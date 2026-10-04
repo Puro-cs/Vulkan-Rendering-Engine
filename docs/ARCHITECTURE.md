@@ -84,9 +84,10 @@ EndRendering(); EndFrame(); }`. `IsRunning()` is the head of the tutorial's `Eng
 delta time, FPS title) and is false once the window was closed; the six calls are the six parts of the tutorial's
 `Renderer::Render()` (the table in "One frame"), `UpdateScene()` preceded by the tutorial's `Engine::Update()`
 (camera controls, ImGui frame, entity updates, which include the terminal commands). The sandbox layer keeps the
-call that is expected next: a frame call out of order prints `Frame sequence error: DrawScene() was called,
-BeginRendering() was expected. Rendering stopped.`, every later frame call does nothing, and `IsRunning()` returns
-false, so the loop ends and the program exits normally. `IsRunning()` itself requires the previous frame to be
+call that is expected next: a frame call out of order prints `Frame sequence error: DrawScene() cannot run yet.
+Rendering stopped.` (since 2026-10-04 without the name of the call that is missing, see "Terminal output"; a call
+that was already made in the frame prints `... was called twice in this frame`), every later frame call does
+nothing, and `IsRunning()` returns false, so the loop ends and the program exits normally. `IsRunning()` itself requires the previous frame to be
 complete (a forgotten `EndFrame()` is reported the same way) and, on its first call, the complete initialization
 chain and an active camera; the first call also does what the old `Run()` did before its loop: it ends the load
 cycle when no model was loaded and starts the terminal reader. An exception inside a frame call is printed and stops
@@ -113,10 +114,11 @@ of the tutorial's `Engine::Initialize()` and `Renderer::Initialize()`, which wer
 The order check lives in the sandbox layer (`sandbox_impl.cpp`): a `done` flag per call. A call of the chain checks
 that it was not made before and that every call in front of it is done; `Run()`, `LoadModel()`, `CreateSphere()`
 and `AddToPipeline()` need all eight, `CreatePipeline()` needs `CreatePipelines()` (it copies the PBR pipeline
-layout created there). The error names the first call that is not done, `Initialization error:
-InitializeRendering() was called, but CreateSwapChain() has not been done.`, and the first error is followed by the
-chain view of planned change 9 with that call marked (see "Terminal output"); the call then does nothing
-(`LoadModel()` and `CreateSphere()` return an empty object), and `Run()` returns without rendering.
+layout created there). Since 2026-10-04 the error names the call that was made, not the one that is missing:
+`Initialization error: CreateSwapChain() cannot run yet. Initialization stopped.`, followed by the chain view with
+that call marked and the reason (see "Terminal output"). The first error stops the initialization: the call and
+every call after it do nothing and print nothing (`LoadModel()` and `CreateSphere()` return an empty object), and
+`IsRunning()` returns false without rendering.
 `CreateCamera()`, `CreateLight()`
 and `SetActiveCamera()` are not guarded: they only create entities and their handles stay usable. Engine and
 Renderer do no checking of their own, like the tutorial's private helpers; the `Sandbox` is their only caller.
@@ -145,19 +147,41 @@ draining, happen inside the frame call `UpdateScene()`.
 ### Terminal output (planned change 9, own code)
 
 Three views on the terminal, in the form of `docs/ROADMAP.md`, "Terminal output". Printed once to stdout by the first
-`IsRunning()`, after its one-time work and the start-up log: the initialization chain as one line per call (`[ok]`,
+`IsRunning()`, after its one-time work and the start-up log (by then the chain is complete, so every call of it is
+in the sandbox file): the initialization chain as one line per call (`[ok]`,
 the name, what the call does); every pipeline as a block (`Pipeline "toon"    shaders/toon.slang -> shaders/toon.spv`,
 then the seven stages input assembly, vertex shader `VSMain`, rasterization with the cull mode, fragment shader
 `PSMain`, depth test, color blending and attachments, each marked `yours` when it is one of the four settings of an
 own pipeline and `fixed` otherwise, so every line of the engine's `"pbr"` block is fixed; then `Objects` with the
-names of the objects the pipeline draws); the frame sequence as one line per call with `[  ]`. The same lists on
-stderr after an error, with the call the error is about marked: an initialization error prints the chain once, with
-the first error (`[!!] PickDevice            <- missing`, or `<- called twice`, `<- failed`), and a frame sequence
-error or an exception inside a frame call prints the frame sequence with the expected call marked `<- missing` or the
-failing call `<- failed`; the calls in front of it are `[ok]`.
+names of the objects the pipeline draws). The frame sequence, one line per call with `[ok]`, is printed once after
+the first complete frame.
 
-How it works (`sandbox_impl.cpp`): description arrays next to the name arrays of the two call enums;
-`PrintCallList()` formats one list (the name column is as wide as the longest name plus two), `PrintPipeline()` one
+Since 2026-10-04 a view only shows calls that the sandbox file has made. The students are meant to find the calls
+and their order in the wiki; the earlier form (the missing call named in the error line and marked `<- missing`, the
+calls after it listed with `[  ]`, the whole frame sequence at start-up) gave the solution away one run at a time.
+After an error, on stderr: the calls that are done as `[ok]` lines, then the call that was made and could not run,
+marked `[!!]` with the reason, and nothing below it:
+
+```
+Initialization error: CreateSwapChain() cannot run yet. Initialization stopped.
+
+  [ok] InitializeWindow  the window and its input callbacks
+  [ok] CreateInstance    Vulkan instance, debug messenger, window surface
+  [!!] CreateSwapChain   <- too early: a swap chain is created by a logical device, with an image
+                            format the GPU supports. No device exists yet.
+```
+
+The reason says in Vulkan terms what the call needs and never names another call. The other reasons are
+`<- called twice: ...` (a chain call that is done, a frame call that was already made in this frame) and
+`<- failed` (the engine's work failed or threw). `IsRunning()` is reported the same way when the chain is not
+complete or the previous frame was not finished, the scene calls when the chain is not complete. The first
+initialization error stops the initialization and the first frame error stops rendering, so there is one view per run.
+
+How it works (`sandbox_impl.cpp`): description arrays and requirement arrays (the reason texts) next to the name
+arrays of the two call enums. A fixed text per call is enough: the calls that are done are always a prefix of the
+order, so a call that is too early always lacks what the call directly in front of it creates.
+`PrintCallList()` formats one list (the done calls, then the marked call; the name column is as wide as the longest
+printed name plus two, and the lines of a reason start in the same column), `PrintPipeline()` one
 block (columns of 19 and 43 characters); the `Sandbox` keeps a `PipelineView` (name, shader file, settings, engine
 flag, object names) per pipeline, `"pbr"` first when `CreatePipelines()` succeeds, then one per successful
 `CreatePipeline()`, and `AddToPipeline()` appends the object's name to its view; an object that was added to no

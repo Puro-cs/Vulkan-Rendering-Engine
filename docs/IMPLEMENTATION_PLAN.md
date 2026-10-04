@@ -360,6 +360,12 @@ derived from the fixed widths and shown to the owner as text. Debug and Release 
 two files that include `sandbox.h` recompiled (`sandbox.cpp`, `sandbox_impl.cpp`), their objects newer than the
 sources, nothing stale. The owner ran it on 2026-09-22: everything works. Step 9 is done.
 
+Changed on 2026-10-04 (not a plan step; `docs/ROADMAP.md`, "Done"): the error texts of steps 7 and 8 and the views
+of this step no longer name or list calls that the sandbox file has not made. `PrintCallList()` prints the done
+calls and then the call that could not run with its reason (requirement arrays next to the description arrays);
+the first initialization error stops the initialization; the frame sequence is printed after the first complete
+frame. The checks of steps 7 and 8 ("the error that names the missing call") describe the state before.
+
 ## Step 10: README for students (documentation, S)
 
 The shape of `sandbox.cpp`; the calls and their order; what a shader receives (the table of `ARCHITECTURE.md`) and the

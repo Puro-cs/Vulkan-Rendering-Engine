@@ -71,6 +71,24 @@ static const char *const INITIALIZATION_CALL_DESCRIPTIONS[InitializationCallCoun
     "command pool, descriptor pool, default textures, command buffers",
     "semaphores and fences, worker threads, model loader, UI"};
 
+// Why each call cannot run before the call in front of it, for the terminal output: what the call needs,
+// in Vulkan terms. A text never names another call; the students find the calls in the wiki.
+static const char *const INITIALIZATION_CALL_REQUIREMENTS[InitializationCallCount] = {
+    "",        // the first call needs nothing
+    "the instance asks the window system which extensions it needs,\nand the surface it creates is the drawing area of a window.\nNo window exists yet.",
+    "a GPU is picked from the devices the Vulkan instance lists, and\nit has to be able to present to the window surface.\nNeither exists yet.",
+    "a swap chain is created by a logical device, with an image\nformat the GPU supports. No device exists yet.",
+    "the depth image and the off-screen color image get the size of\nthe swap chain images. No swap chain exists yet.",
+    "a pipeline is built for the formats of the attachments it draws\ninto. The rendering set-up with its attachments does not exist yet.",
+    "the descriptor sets that are allocated here are built after the\ndescriptor set layouts of the pipelines. No pipeline exists yet.",
+    "the semaphores and fences synchronize the command buffers of the\nframes, and the worker threads upload textures through the\ncommand pool. Neither exists yet."};
+
+// The same for the calls that are not part of the chain
+static const char *const CREATE_PIPELINE_REQUIREMENT =
+    "an own pipeline shares the layout of the engine's pipelines,\nand they do not exist yet.";
+static const char *const SCENE_CALL_REQUIREMENT =
+    "the meshes and textures of the scene go into buffers and images\non the GPU, which only the completely initialized engine can\ncreate. The initialization chain is not complete.";
+
 // The frame calls of the render loop, in the order in which they have to be made once per frame
 enum FrameCall
 {
@@ -94,6 +112,19 @@ static const char *const FRAME_CALL_DESCRIPTIONS[FrameCallCount] = {
     "per object: bind pipeline, descriptor sets, buffers, draw",
     "the engine's UI on top, end the command buffer",
     "submit the command buffer, present the image"};
+
+// Why each call cannot run before the call in front of it, as for the initialization chain
+static const char *const FRAME_CALL_REQUIREMENTS[FrameCallCount] = {
+    "",        // the first call needs nothing
+    "the scene data is written into the uniform buffers of a frame.\nNo frame has been begun: the GPU may still be reading them.",
+    "the draw commands that are recorded from here on use the scene\ndata of this frame. The uniform buffers have not been updated\nin this frame.",
+    "draw commands are recorded into a command buffer, inside a\nrendering pass. Neither has been begun in this frame.",
+    "the UI is drawn on top of the finished scene, and the scene\nhas not been drawn in this frame.",
+    "only a command buffer whose recording has ended can be\nsubmitted to the GPU. This frame has none."};
+
+// The same for IsRunning(), which needs the previous frame to be complete
+static const char *const IS_RUNNING_REQUIREMENT =
+    "the frame that was begun is not finished. Its command buffer\nhas not been submitted and its image has not been presented.";
 
 /**
  * @brief A pipeline as the terminal output shows it: the engine's "pbr" or one created with
@@ -121,32 +152,36 @@ struct Sandbox::Impl
 
 	bool modelLoaded = false;
 
-	// The initialization chain: which calls are done, and the title of the window (the name the Vulkan
-	// instance is created with)
+	// The initialization chain: which calls are done, whether an error has stopped it (every call after
+	// the first error does nothing and prints nothing), and the title of the window (the name the
+	// Vulkan instance is created with)
 	bool        initializationDone[InitializationCallCount] = {};
-	bool        initializationOrderPrinted                  = false;
+	bool        initializationStopped                       = false;
 	std::string title;
 
-	bool RequireInitialization(const char *caller, int callCount);
+	bool RequireInitialization(const char *caller, int callCount, const std::string &reason);
 	bool InitializationCall(int call, const std::function<bool()> &work);
 
 	// The render loop: whether the first IsRunning() has done its one-time work, the frame call that
-	// is expected next, and whether rendering was stopped by a frame call out of order or an error
-	bool loopStarted      = false;
-	int  expectedCall     = BeginFrameCall;
-	bool renderingStopped = false;
+	// is expected next, whether rendering was stopped by a frame call out of order or an error, and
+	// whether the frame sequence was printed (once, after the first complete frame)
+	bool loopStarted          = false;
+	int  expectedCall         = BeginFrameCall;
+	bool renderingStopped     = false;
+	bool frameSequencePrinted = false;
 
-	bool FrameSequenceError(const char *caller);
+	bool FrameSequenceError(const char *caller, const char *what, const std::string &reason);
 	void FrameCall(int call, const std::function<void()> &work);
 
 	// The terminal output: the pipelines in the order in which they are printed ("pbr" first), and the
-	// three views (the chain, every pipeline with its objects, the frame sequence)
+	// three views (the chain, every pipeline with its objects, the frame sequence). A view only shows
+	// calls that the sandbox file has made.
 	std::vector<PipelineView> pipelineViews;
 
-	void PrintInitializationChain(std::ostream &out, int markedCall, const char *reason) const;
-	void ReportInitializationChain(int markedCall, const char *reason);
+	void PrintInitializationChain(std::ostream &out, const char *markedCall, const std::string &reason) const;
+	void ReportInitializationChain(const char *markedCall, const std::string &reason);
 	void PrintPipelines(std::ostream &out) const;
-	void PrintFrameSequence(std::ostream &out, int markedCall, const char *reason) const;
+	void PrintFrameSequence(std::ostream &out, const char *markedCall, const std::string &reason) const;
 	void PrintOverview(std::ostream &out) const;
 
 	// The commands that are typed into the terminal while the engine renders
@@ -501,29 +536,37 @@ void Sandbox::Impl::ApplyTerminalCommands()
 
 // --- Terminal output ---
 
-// One list of calls, in the form of the roadmap:
-//   [ok] CreateSwapChain       swap chain and its image views
-//   [!!] InitializeRendering   <- missing
-//   [  ] CreatePipelines       the engine's pipelines, descriptor set layouts, light buffers
-// The first `doneCount` calls are done, `markedCall` is the call the error is about (-1: none).
-static void PrintCallList(std::ostream &out, const char *const *names, const char *const *descriptions, int count, int doneCount, int markedCall, const char *reason)
+// One list of calls: the calls that are done, then the call the error is about with the reason.
+//   [ok] InitializeWindow   the window and its input callbacks
+//   [ok] CreateInstance     Vulkan instance, debug messenger, window surface
+//   [!!] CreateSwapChain    <- too early: a swap chain is created by a logical device, with an image
+//                              format the GPU supports. No device exists yet.
+// The first `doneCount` calls are done; `markedCall` is the name of the call that was made and could
+// not run (nullptr: none). The calls that are still missing are not printed: the list shows what the
+// sandbox file has called, not what it has to call.
+static void PrintCallList(std::ostream &out, const char *const *names, const char *const *descriptions, int doneCount, const char *markedCall, const std::string &reason)
 {
-	size_t nameWidth = 0;
-	for (int call = 0; call < count; ++call)
+	size_t nameWidth = markedCall ? std::strlen(markedCall) : 0;
+	for (int call = 0; call < doneCount; ++call)
 	{
 		nameWidth = std::max(nameWidth, std::strlen(names[call]));
 	}
-	for (int call = 0; call < count; ++call)
+	for (int call = 0; call < doneCount; ++call)
 	{
-		const char *mark = (call == markedCall) ? "[!!]" : (call < doneCount ? "[ok]" : "[  ]");
-		out << "  " << mark << " " << std::left << std::setw(static_cast<int>(nameWidth) + 2) << names[call];
-		if (call == markedCall)
+		out << "  [ok] " << std::left << std::setw(static_cast<int>(nameWidth) + 2) << names[call] << descriptions[call] << std::endl;
+	}
+	if (markedCall)
+	{
+		out << "  [!!] " << std::left << std::setw(static_cast<int>(nameWidth) + 2) << markedCall << "<- ";
+		// The lines of a reason start in the same column
+		const std::string indent(nameWidth + 12, ' ');
+		for (const char c : reason)
 		{
-			out << "<- " << reason;
-		}
-		else
-		{
-			out << descriptions[call];
+			out << c;
+			if (c == '\n')
+			{
+				out << indent;
+			}
 		}
 		out << std::endl;
 	}
@@ -590,7 +633,7 @@ static void PrintPipeline(std::ostream &out, const PipelineView &pipeline, const
 	out << std::endl;
 }
 
-void Sandbox::Impl::PrintInitializationChain(std::ostream &out, int markedCall, const char *reason) const
+void Sandbox::Impl::PrintInitializationChain(std::ostream &out, const char *markedCall, const std::string &reason) const
 {
 	// The done flags are a prefix of the chain: a call needs the calls in front of it
 	int doneCount = 0;
@@ -598,17 +641,14 @@ void Sandbox::Impl::PrintInitializationChain(std::ostream &out, int markedCall, 
 	{
 		++doneCount;
 	}
-	PrintCallList(out, INITIALIZATION_CALL_NAMES, INITIALIZATION_CALL_DESCRIPTIONS, InitializationCallCount, doneCount, markedCall, reason);
+	PrintCallList(out, INITIALIZATION_CALL_NAMES, INITIALIZATION_CALL_DESCRIPTIONS, doneCount, markedCall, reason);
 }
 
-// The view of the chain after an initialization error, printed with the first error only
-void Sandbox::Impl::ReportInitializationChain(int markedCall, const char *reason)
+// The view of the chain after an initialization error: the calls that are done, then the call that
+// could not run. The error stops the initialization, so there is only one such view.
+void Sandbox::Impl::ReportInitializationChain(const char *markedCall, const std::string &reason)
 {
-	if (initializationOrderPrinted)
-	{
-		return;
-	}
-	initializationOrderPrinted = true;
+	initializationStopped = true;
 	std::cerr << std::endl;
 	PrintInitializationChain(std::cerr, markedCall, reason);
 	std::cerr << std::endl;
@@ -640,41 +680,44 @@ void Sandbox::Impl::PrintPipelines(std::ostream &out) const
 	}
 }
 
-void Sandbox::Impl::PrintFrameSequence(std::ostream &out, int markedCall, const char *reason) const
+void Sandbox::Impl::PrintFrameSequence(std::ostream &out, const char *markedCall, const std::string &reason) const
 {
 	// The calls in front of the expected one are done in this frame
-	PrintCallList(out, FRAME_CALL_NAMES, FRAME_CALL_DESCRIPTIONS, FrameCallCount, expectedCall, markedCall, reason);
+	PrintCallList(out, FRAME_CALL_NAMES, FRAME_CALL_DESCRIPTIONS, expectedCall, markedCall, reason);
 }
 
-// The start-up print: the chain, every pipeline with its objects, the frame sequence
+// The start-up print: the chain and every pipeline with its objects. The frame sequence follows after
+// the first complete frame (FrameCall()): at start-up the sandbox file has made no frame call yet.
 void Sandbox::Impl::PrintOverview(std::ostream &out) const
 {
 	out << std::endl;
-	out << "Initialization chain (eight calls, in this order):" << std::endl;
+	out << "Initialization chain:" << std::endl;
 	out << std::endl;
-	PrintInitializationChain(out, -1, "");
+	PrintInitializationChain(out, nullptr, "");
 	out << std::endl;
 	PrintPipelines(out);
-	out << "Frame sequence (six calls per frame, in this order):" << std::endl;
-	out << std::endl;
-	PrintFrameSequence(out, -1, "");
-	out << std::endl;
 }
 
 // --- The initialization chain ---
 
-// Checks that the first `callCount` calls of the chain are done and reports the first one that is not.
-// A call of the chain requires the calls in front of it; Run() and the scene calls require all of them.
-bool Sandbox::Impl::RequireInitialization(const char *caller, int callCount)
+// Checks that the first `callCount` calls of the chain are done. If one is not, `caller` cannot run:
+// that is reported with the reason, without the name of the call that is missing, and the
+// initialization stops. A call of the chain requires the calls in front of it; IsRunning() and the
+// scene calls require all of them.
+bool Sandbox::Impl::RequireInitialization(const char *caller, int callCount, const std::string &reason)
 {
+	if (initializationStopped)
+	{
+		return false;
+	}
 	for (int call = 0; call < callCount; ++call)
 	{
 		if (initializationDone[call])
 		{
 			continue;
 		}
-		std::cerr << "Initialization error: " << caller << "() was called, but " << INITIALIZATION_CALL_NAMES[call] << "() has not been done." << std::endl;
-		ReportInitializationChain(call, "missing");
+		std::cerr << "Initialization error: " << caller << "() cannot run yet. Initialization stopped." << std::endl;
+		ReportInitializationChain(caller, reason);
 		return false;
 	}
 	return true;
@@ -683,13 +726,17 @@ bool Sandbox::Impl::RequireInitialization(const char *caller, int callCount)
 // One call of the chain: the order check, then the work of the engine
 bool Sandbox::Impl::InitializationCall(int call, const std::function<bool()> &work)
 {
-	if (initializationDone[call])
+	if (initializationStopped)
 	{
-		std::cerr << "Initialization error: " << INITIALIZATION_CALL_NAMES[call] << "() was called twice." << std::endl;
-		ReportInitializationChain(call, "called twice");
 		return false;
 	}
-	if (!RequireInitialization(INITIALIZATION_CALL_NAMES[call], call))
+	if (initializationDone[call])
+	{
+		std::cerr << "Initialization error: " << INITIALIZATION_CALL_NAMES[call] << "() was called twice. Initialization stopped." << std::endl;
+		ReportInitializationChain(INITIALIZATION_CALL_NAMES[call], "called twice: this step is already done.");
+		return false;
+	}
+	if (!RequireInitialization(INITIALIZATION_CALL_NAMES[call], call, std::string("too early: ") + INITIALIZATION_CALL_REQUIREMENTS[call]))
 	{
 		return false;
 	}
@@ -697,15 +744,15 @@ bool Sandbox::Impl::InitializationCall(int call, const std::function<bool()> &wo
 	{
 		if (!work())
 		{
-			std::cerr << INITIALIZATION_CALL_NAMES[call] << "() failed." << std::endl;
-			ReportInitializationChain(call, "failed");
+			std::cerr << INITIALIZATION_CALL_NAMES[call] << "() failed. Initialization stopped." << std::endl;
+			ReportInitializationChain(INITIALIZATION_CALL_NAMES[call], "failed");
 			return false;
 		}
 	}
 	catch (const std::exception &e)
 	{
 		std::cerr << INITIALIZATION_CALL_NAMES[call] << "() failed: " << e.what() << std::endl;
-		ReportInitializationChain(call, "failed");
+		ReportInitializationChain(INITIALIZATION_CALL_NAMES[call], "failed");
 		return false;
 	}
 	initializationDone[call] = true;
@@ -777,12 +824,14 @@ bool Sandbox::CreateSyncObjects()
 
 // --- The render loop ---
 
-// Reports a frame call that was made out of order and stops rendering: IsRunning() is false from now on
-bool Sandbox::Impl::FrameSequenceError(const char *caller)
+// Reports a frame call that was made out of order (`what`: "cannot run yet" or "was called twice in
+// this frame") with the reason, without the name of the call that is missing, and stops rendering:
+// IsRunning() is false from now on
+bool Sandbox::Impl::FrameSequenceError(const char *caller, const char *what, const std::string &reason)
 {
-	std::cerr << "Frame sequence error: " << caller << "() was called, " << FRAME_CALL_NAMES[expectedCall] << "() was expected. Rendering stopped." << std::endl;
+	std::cerr << "Frame sequence error: " << caller << "() " << what << ". Rendering stopped." << std::endl;
 	std::cerr << std::endl;
-	PrintFrameSequence(std::cerr, expectedCall, "missing");
+	PrintFrameSequence(std::cerr, caller, reason);
 	std::cerr << std::endl;
 	renderingStopped = true;
 	return false;
@@ -796,9 +845,15 @@ void Sandbox::Impl::FrameCall(int call, const std::function<void()> &work)
 	{
 		return;
 	}
-	if (call != expectedCall)
+	if (call < expectedCall)
 	{
-		FrameSequenceError(FRAME_CALL_NAMES[call]);
+		// The calls in front of the expected one are done in this frame, this one among them
+		FrameSequenceError(FRAME_CALL_NAMES[call], "was called twice in this frame", "called twice: this step is already done in this frame.");
+		return;
+	}
+	if (call > expectedCall)
+	{
+		FrameSequenceError(FRAME_CALL_NAMES[call], "cannot run yet", std::string("too early: ") + FRAME_CALL_REQUIREMENTS[call]);
 		return;
 	}
 	try
@@ -809,12 +864,24 @@ void Sandbox::Impl::FrameCall(int call, const std::function<void()> &work)
 	{
 		std::cerr << "Exception: " << e.what() << std::endl;
 		std::cerr << std::endl;
-		PrintFrameSequence(std::cerr, call, "failed");
+		PrintFrameSequence(std::cerr, FRAME_CALL_NAMES[call], "failed");
 		std::cerr << std::endl;
 		renderingStopped = true;
 		return;
 	}
 	expectedCall = (call + 1) % FrameCallCount;
+
+	// The frame sequence, once, after the first complete frame: by now the sandbox file has made
+	// every frame call
+	if (call == EndFrameCall && !frameSequencePrinted)
+	{
+		frameSequencePrinted = true;
+		std::cout << std::endl;
+		std::cout << "Frame sequence:" << std::endl;
+		std::cout << std::endl;
+		PrintCallList(std::cout, FRAME_CALL_NAMES, FRAME_CALL_DESCRIPTIONS, FrameCallCount, nullptr, "");
+		std::cout << std::endl;
+	}
 }
 
 bool Sandbox::IsRunning()
@@ -827,7 +894,7 @@ bool Sandbox::IsRunning()
 	// The first call: what has to be there before the first frame
 	if (!impl->loopStarted)
 	{
-		if (!impl->RequireInitialization("IsRunning", InitializationCallCount))
+		if (!impl->RequireInitialization("IsRunning", InitializationCallCount, "the initialization chain is not complete; the engine cannot render yet."))
 		{
 			return false;
 		}
@@ -851,15 +918,15 @@ bool Sandbox::IsRunning()
 		terminalEntity->AddComponent<TerminalCommandComponent>([this] { impl->ApplyTerminalCommands(); });
 		impl->terminalCommands.Start();
 
-		// The terminal output: the chain, every pipeline with its objects and the frame sequence,
-		// once, after the start-up log and before the first frame
+		// The terminal output: the chain and every pipeline with its objects, once, after the
+		// start-up log and before the first frame
 		impl->PrintOverview(std::cout);
 	}
 
 	// The previous frame has to be complete
 	if (impl->expectedCall != BeginFrameCall)
 	{
-		return impl->FrameSequenceError("IsRunning");
+		return impl->FrameSequenceError("IsRunning", "cannot run yet", std::string("too early: ") + IS_RUNNING_REQUIREMENT);
 	}
 
 	try
@@ -982,7 +1049,7 @@ SceneObject *Sandbox::LoadModel(const std::string &name, const std::string &file
 	auto object  = std::make_unique<SceneObject>();
 	object->name = name;
 
-	if (impl->RequireInitialization("LoadModel", InitializationCallCount))
+	if (impl->RequireInitialization("LoadModel", InitializationCallCount, std::string("too early: ") + SCENE_CALL_REQUIREMENT))
 	{
 		Renderer *renderer = impl->engine.GetRenderer();
 		// The loader replaces the glTF lights of the renderer. Keep the lights of the models that
@@ -1027,7 +1094,7 @@ SceneObject *Sandbox::CreateSphere(const std::string &name, float radius)
 	auto object  = std::make_unique<SceneObject>();
 	object->name = name;
 
-	if (impl->RequireInitialization("CreateSphere", InitializationCallCount))
+	if (impl->RequireInitialization("CreateSphere", InitializationCallCount, std::string("too early: ") + SCENE_CALL_REQUIREMENT))
 	{
 		Entity *sphereEntity = impl->engine.CreateEntity(name);
 		sphereEntity->AddComponent<TransformComponent>();
@@ -1057,7 +1124,7 @@ SceneObject *Sandbox::CreateSphere(const std::string &name, float radius)
 bool Sandbox::CreatePipeline(const std::string &name, const std::string &shaderFile, const PipelineSettings &settings)
 {
 	// The named pipelines copy the layout of the engine's PBR pipeline
-	if (!impl->RequireInitialization("CreatePipeline", CreatePipelinesCall + 1))
+	if (!impl->RequireInitialization("CreatePipeline", CreatePipelinesCall + 1, std::string("too early: ") + CREATE_PIPELINE_REQUIREMENT))
 	{
 		return false;
 	}
@@ -1072,7 +1139,7 @@ bool Sandbox::CreatePipeline(const std::string &name, const std::string &shaderF
 
 bool Sandbox::AddToPipeline(const std::string &name, SceneObject *object)
 {
-	if (!object || !impl->RequireInitialization("AddToPipeline", InitializationCallCount))
+	if (!object || !impl->RequireInitialization("AddToPipeline", InitializationCallCount, std::string("too early: ") + SCENE_CALL_REQUIREMENT))
 	{
 		return false;
 	}

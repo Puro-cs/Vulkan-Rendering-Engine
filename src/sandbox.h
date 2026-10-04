@@ -200,7 +200,8 @@ class Light
  *
  * Every group of Vulkan steps is one call. The engine is initialized by the eight calls of the
  * initialization chain, in the order in which they are declared below; a call that is made out of
- * order, twice, or without the calls before it, reports the error and does nothing. All scene objects
+ * order, twice, or without the calls before it, reports the error and stops the initialization: it and
+ * every call after it do nothing. All scene objects
  * are created in SetupScene(), after the chain and before rendering starts. The render loop is
  * `while (IsRunning())` around the six frame calls, in the order in which they are declared below; a
  * frame call that is missing or out of order is reported by the next call, and rendering stops. The
@@ -285,8 +286,8 @@ class Sandbox
 	/**
 	 * @brief The loop condition: true until the window is closed. Needs the complete initialization
 	 * chain and an active camera. Processes the window events and the frame time of the coming frame.
-	 * The first call prints the initialization chain, every pipeline with its objects and the frame
-	 * sequence to the terminal.
+	 * The first call prints the initialization chain and every pipeline with its objects to the
+	 * terminal; the frame sequence follows after the first complete frame.
 	 * @return True while the window is open, false when it was closed or when rendering stopped after
 	 *         a frame call was made out of order.
 	 */

@@ -59,16 +59,17 @@ Studio, the console window that opens with the exe is the terminal to type in.
 Start-up (planned change 7, since 2026-09-22): `main()` in `src/sandbox.cpp` initializes the engine with eight calls
 in a fixed order (`InitializeWindow`, `CreateInstance`, `PickDevice`, `CreateSwapChain`, `InitializeRendering`,
 `CreatePipelines`, `CreateCommandBuffers`, `CreateSyncObjects`), then `SetupScene()`, then the render loop. A call
-that is removed, swapped or repeated is reported on stderr by name (`Initialization error: InitializeRendering() was
-called, but CreateSwapChain() has not been done. ...`), the scene calls that need the engine report the same, and the
-loop never starts; the process ends normally. The log lines of the set-up steps are the tutorial's, in the same
+that is removed, swapped or repeated is reported on stderr (since 2026-10-04 by the name of the call that could not
+run, with the reason and without the name of the missing call: `Initialization error: CreateSwapChain() cannot run
+yet. Initialization stopped.`), the scene calls that need the engine report the same, every call after the first
+error does nothing, and the loop never starts; the process ends normally. The log lines of the set-up steps are the tutorial's, in the same
 order except that "Creating depth resources" and "Creating opaque scene color resources" now come before "Creating
 PBR pipeline" (they belong to `InitializeRendering`), and the first line `Renderer::Initialize start` is gone.
 
 The render loop (planned change 8, since 2026-09-22): `while (sandbox.IsRunning()) { BeginFrame(); UpdateScene();
 BeginRendering(); DrawScene(); EndRendering(); EndFrame(); }` in `main()`. A frame call that is removed or out of
-order is reported once on stderr (`Frame sequence error: DrawScene() was called, BeginRendering() was expected.
-Rendering stopped.`); the loop then ends and the process exits normally, without a crash dump. A forgotten
+order is reported once on stderr (`Frame sequence error: DrawScene() cannot run yet. Rendering stopped.`, with the
+calls of the frame that are done and the reason); the loop then ends and the process exits normally, without a crash dump. A forgotten
 `EndFrame()` is reported by the next `IsRunning()`. A `SetupScene()` without `SetActiveCamera()` is reported by the
 first `IsRunning()` (`IsRunning(): there is no active camera. ...`) and the loop never starts.
 
@@ -112,10 +113,11 @@ Forcing completion to avoid deadlock.` is the normal end of loading: the `Loadin
 Six blank lines after `Features queried successfully` come from the two-statement `LOGW` macro used under an
 unbraced `if` (tutorial code). When stdin is redirected from a file or closed (as in the capture command above),
 the terminal reader thread of planned change 6 reads end-of-file at once and ends; nothing is printed for that.
-Since planned change 9 (2026-09-22) the first `IsRunning()` prints the initialization chain, the pipelines with
-their objects and the frame sequence to stdout, after the start-up log and before the first frame
-(`docs/ARCHITECTURE.md`, "Terminal output"); an initialization error or a frame sequence error prints its view to
-stderr, under the error line.
+Since planned change 9 (2026-09-22) the first `IsRunning()` prints the initialization chain and the pipelines with
+their objects to stdout, after the start-up log and before the first frame; since 2026-10-04 the frame sequence
+follows once, after the first complete frame, in the middle of the upload log lines of the first frames
+(`docs/ARCHITECTURE.md`, "Terminal output"). An initialization error or a frame sequence error prints its view to
+stderr, under the error line: only the calls the sandbox file has made, the last one marked with the reason.
 
 After a shader file is added or deleted, run `cmake --preset windows-msvc` again: the `*.slang` list is a configure-time
 glob, and a build tree that still lists a deleted shader fails in the `shaders` target.
