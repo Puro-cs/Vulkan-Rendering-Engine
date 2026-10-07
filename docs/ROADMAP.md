@@ -125,8 +125,8 @@ binding 0 and the material push constants, which is exactly the PBR layout the e
   the box column is printed at start-up too. The owner ran it on 2026-09-22: everything works. Closes
   `ascii_pipeline`. Details: `docs/IMPLEMENTATION_PLAN.md`, log: `docs/DELETIONS.md`, "Added code".
 - 2026-10-04, `done`, Rule 1: the terminal output no longer gives the solution away. The students are to find the
-  calls and their order in the wiki (`docs/wiki`, still to be written), starting from an empty sandbox file on the
-  branch `learning`; the output of planned change 9 named the missing call, marked it and listed every call after
+  calls and their order in the wiki (the GitHub wiki of the repository; its pages are kept in `docs/wiki` until
+  pushed, written 2026-10-07), starting from the skeleton on the branch `learning` (since 2026-10-07; an empty file until then); the output of planned change 9 named the missing call, marked it and listed every call after
   it, so the order could be read off the terminal run by run. Now a view only shows calls the sandbox file has made:
   the done calls as `[ok]`, then the call that could not run as `[!!]` with a reason in Vulkan terms ("a swap chain
   is created by a logical device ... No device exists yet."), never the name of a missing call, and nothing below
@@ -135,6 +135,21 @@ binding 0 and the material push constants, which is exactly the PBR layout the e
   early" alone would not teach anything); the branch `learning` gets a `sandbox.h` with the calls in alphabetical
   order and an empty `sandbox.cpp`. The assistant ran nine wrong sandbox files and the normal one (Release). Log:
   `docs/DELETIONS.md`, "Added code"; form: `docs/ARCHITECTURE.md`, "Terminal output".
+
+- 2026-10-07, `done`, Rule 1 (own code, approved by the owner): the learning branch and the worked example. On
+  `main`, `sandbox.cpp` carries one label per group of the initialization chain (calls 1-4, 5-6, 7-8), so that the
+  example scene and the skeleton have the same labels. On the branch `learning`: (a) `sandbox.cpp` is the example
+  scene with one gap — the first group (the four leading chain calls) is blanked, its label gives the arguments of
+  the first call; the trailing calls, a default camera in `SetupScene()` (`SetActiveCamera(CreateCamera("Camera"))`,
+  so that the engine renders a cleared frame before a scene exists) and the loop are given; the first comment points
+  to the GitHub wiki; `sandbox.h` stays as decided on 2026-10-04 (calls in alphabetical order). (b)
+  `shaders/template.slang` on `learning` declares the light buffer (binding 6) and the material push constants, hands
+  the world position and the world-space normal from `VSMain` to `PSMain` (the lines of `pbr.slang`, incl. the
+  transposed instance normal matrix) and carries the three comments `// ambient`, `// diffuse`, `// specular` before
+  `return baseColor;` — the slots of the worksheet's Phong task. `main`'s template stays the blank one. (c)
+  `docs/BUILD.md`: the camera keys corrected after the code (`Q` up, `E` down). Decided in the thesis project
+  (`C:\ClaudeWorkspace\BA`, `docs/DESIGN_RULES.md` I-01 to I-03, `docs/STEP4_REVIEW.md` §5). Log: `docs/DELETIONS.md`,
+  "Added code".
 
 ## Candidates already visible in the code (not decided)
 
