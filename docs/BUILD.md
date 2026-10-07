@@ -46,7 +46,7 @@ so run it from `src/`. The Visual Studio debugger is configured for that (`VS_DE
 cd src && ../build/windows-msvc/Debug/VulkanRenderEngine.exe
 ```
 
-Window 800x600, title shows frame count, FPS and ms. Controls: `W A S D` move, `Q E` down/up, left mouse drag looks.
+Window 800x600, title shows frame count, FPS and ms. Controls: `W A S D` move, `Q` (or PageUp) up, `E` (or PageDown) down, left mouse drag looks (corrected 2026-10-07 after the code, `engine.cpp`: the earlier "`Q E` down/up" was the wrong way round).
 `Esc` is not bound; close the window to quit.
 
 Terminal commands (planned change 6, since 2026-09-22): in the terminal the engine was started from, type
