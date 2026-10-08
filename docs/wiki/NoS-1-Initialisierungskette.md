@@ -11,12 +11,18 @@ Aus der Beispielszene (`src/sandbox.cpp`, Branch `main`):
 
 	// The initialization chain: eight calls in this order, each one a group of Vulkan steps.
 	// A call that is missing or out of order is reported, and the engine does not render.
+
+	// 1. The window, the Vulkan instance, the device and the swap chain (calls 1 to 4)
 	sandbox.InitializeWindow("Sandbox", WINDOW_WIDTH, WINDOW_HEIGHT);
 	sandbox.CreateInstance();
 	sandbox.PickDevice();
 	sandbox.CreateSwapChain();
+
+	// 2. The rendering set-up and the engine's own pipelines (calls 5 and 6)
 	sandbox.InitializeRendering();
 	sandbox.CreatePipelines();
+
+	// 3. The command buffers and the synchronization (calls 7 and 8)
 	sandbox.CreateCommandBuffers();
 	sandbox.CreateSyncObjects();
 
