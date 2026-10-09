@@ -44,6 +44,7 @@ void SetupScene(Sandbox &sandbox)
 	// Create a simple mesh that needs no file
 	SceneObject *sphere = sandbox.CreateSphere("Sphere", 0.2f);
 	sphere->SetPosition({0.5f, 0.3f, -1.2f});
+	sandbox.AddToPipeline("phong", sphere);        // drawn with the Phong shader instead of the engine's
 }
 
 /**
@@ -66,6 +67,7 @@ int main()
 	// 2. The rendering set-up and the engine's own pipelines (calls 5 and 6)
 	sandbox.InitializeRendering();
 	sandbox.CreatePipelines();
+	sandbox.CreatePipeline("phong", "shaders/phong.slang");        // own pipeline from the Phong shader, settings at their defaults
 
 	// 3. The command buffers and the synchronization (calls 7 and 8)
 	sandbox.CreateCommandBuffers();
