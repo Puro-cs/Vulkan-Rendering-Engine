@@ -16,8 +16,9 @@
  */
 #include "sandbox.h"        // the only engine header this file includes; it contains no Vulkan types
 
-// This file is the skeleton for the worksheet: the example scene of the branch `main` with one gap.
-// Which calls belong into the gap, and in which order, is in the wiki of the repository:
+// This file is the skeleton for the worksheet: the example scene of the branch `main` with one gap in the
+// initialization chain and two calls of the render loop swapped.
+// Which calls belong into the gap, and in which order the calls stand, is in the wiki of the repository:
 // https://github.com/Puro-cs/Vulkan-Rendering-Engine/wiki
 
 // Constants
@@ -30,7 +31,7 @@ constexpr int WINDOW_HEIGHT = 600;
  */
 void SetupScene(Sandbox &sandbox)
 {
-	// A default camera, so that the engine renders before a scene exists (the scene of task 3 replaces this line)
+	// A default camera, so that the engine renders before a scene exists (the scene of task 2 replaces this line)
 	sandbox.SetActiveCamera(sandbox.CreateCamera("Camera"));
 }
 
@@ -59,15 +60,15 @@ int main()
 	// Set up the scene
 	SetupScene(sandbox);
 
-	// The render loop: six calls per frame in this order, until the window is closed. A call that is
+	// The render loop: six calls per frame, until the window is closed; two of them are swapped here. A call that is
 	// missing or out of order is reported by the next one, and rendering stops. The engine's loading
 	// overlay covers the first frames while the meshes and textures are uploaded.
 	while (sandbox.IsRunning())
 	{
 		sandbox.BeginFrame();        // wait until the GPU is done with this frame slot, acquire a swap chain image
 		sandbox.UpdateScene();       // camera controls, terminal commands, lights and transforms into the uniform buffers
-		sandbox.BeginRendering();    // begin the command buffer, clear the color and depth attachments
 		sandbox.DrawScene();         // per object: bind its pipeline, descriptor sets and buffers, then draw
+		sandbox.BeginRendering();    // begin the command buffer, clear the color and depth attachments
 		sandbox.EndRendering();      // the engine's UI on top, end the command buffer
 		sandbox.EndFrame();          // submit the command buffer, present the image
 	}
