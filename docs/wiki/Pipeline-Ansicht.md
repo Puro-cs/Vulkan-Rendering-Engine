@@ -64,11 +64,11 @@ Nie je Frame. Die Ausgabe ist Text mit festen Spalten, keine Zeichnung der GPU-P
 | `Vertex shader` | den Einstiegspunkt `VSMain` |
 | `Rasterization` | `cull mode: none` / `front` / `back` |
 | `Fragment shader` | den Einstiegspunkt `PSMain` |
-| `Depth test` | `on, writes depth` / `on, no depth writes` / `off` |
-| `Color blending` | `off` / `on, drawn in the transparent pass`; bei `"pbr"` `off (on for blended materials)` |
-| `Attachments` | `off-screen color image + depth image`; mit Blending `swap chain image + depth image` – immer `fixed` |
+| `Depth test` | `on, writes depth` / `off` |
+| `Color blending` | `off`; bei `"pbr"` `off (on for blended materials)` – immer `fixed` |
+| `Attachments` | `off-screen color image + depth image` – immer `fixed` |
 
-`yours` steht an den vier Einstellungen einer eigenen Pipeline (Shader, Cull Mode, Depth Test, Blending), `fixed` an allem, was die Engine festlegt – und an jeder Zeile von `"pbr"`. Die letzte Zeile `Objects` nennt die Objekte, die die Pipeline zeichnet: Objekte, die keiner Pipeline zugewiesen sind, stehen unter `"pbr"`; ein einzeln hinzugefügter Teil heißt `Room.Texture1`; `none`, wenn die Pipeline nichts zeichnet.
+`yours` steht an den drei Einstellungen einer eigenen Pipeline (Shader, Cull Mode, Depth Test), `fixed` an allem, was die Engine festlegt – und an jeder Zeile von `"pbr"`. Die letzte Zeile `Objects` nennt die Objekte, die die Pipeline zeichnet: Objekte, die keiner Pipeline zugewiesen sind, stehen unter `"pbr"`; ein einzeln hinzugefügter Teil heißt `Room.Texture1`; `none`, wenn die Pipeline nichts zeichnet.
 
 ## Der Fehlerfall
 

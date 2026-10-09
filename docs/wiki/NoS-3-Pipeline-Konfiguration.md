@@ -31,11 +31,11 @@ bool CreatePipeline(const std::string &name, const std::string &shaderFile, cons
 - Nicht Teil der Kette, braucht aber `CreatePipelines()`: *an own pipeline shares the layout of the engine's pipelines, and they do not exist yet.* Der Aufruf steht in der Kette nach `CreatePipelines()` oder in `SetupScene()` – in jedem Fall, bevor das Rendering beginnt.
 - `name`: der Name, den `AddToPipeline()` benutzt. `"pbr"` ist die Pipeline der Engine und reserviert.
 - `shaderFile`: `"shaders/x.slang"`; geladen wird `"shaders/x.spv"`, das der Build daraus erzeugt. Die Datei braucht die Einstiegspunkte `VSMain` und `PSMain`.
-- `settings`: die drei Einstellungen unten; `{}` sind die Standardwerte.
+- `settings`: die zwei Einstellungen unten; `{}` sind die Standardwerte.
 
 Eine Pipeline je Shader-Datei, beliebig viele Objekte je Pipeline; eine Pipeline wird einmal erzeugt und ändert sich nicht mehr; Objekte besitzen keine Pipelines.
 
-## Die vier Dinge, die eine eigene Pipeline ausmachen
+## Die drei Dinge, die eine eigene Pipeline ausmachen
 
 ```cpp
 enum class CullMode { None, Front, Back };
@@ -44,7 +44,6 @@ struct PipelineSettings
 {
 	CullMode cullMode  = CullMode::None;
 	bool     depthTest = true;
-	bool     blending  = false;        // true: no depth writes, drawn in the transparent pass
 };
 ```
 
@@ -52,12 +51,11 @@ struct PipelineSettings
 |---|---|
 | die Shader-Datei | Vertex- und Fragment-Shader in einer Datei (`VSMain`, `PSMain`) |
 | `cullMode` | welche Seite eines Dreiecks **nicht** gezeichnet wird; Vorderseiten sind die gegen den Uhrzeigersinn aufgezählten (`None`: beide Seiten zeichnen) |
-| `depthTest` | an: Tiefenvergleich `LessOrEqual`, schreibt Tiefe – außer wenn `blending` an ist |
-| `blending` | an: Alpha-Blending (*source alpha / one minus source alpha*), keine Tiefenschreibzugriffe, gezeichnet im transparenten Pass direkt auf das Swap-Chain-Bild |
+| `depthTest` | an: Tiefenvergleich `LessOrEqual`, schreibt Tiefe |
 
 Eine Einstellung, die nicht der Standard ist: `sandbox.CreatePipeline("outline", "shaders/outline.slang", {.cullMode = CullMode::Front});`
 
-Alles andere legt die Engine fest: Vertex-Layout, Topologie (Triangle List), Multisampling, das Pipeline-Layout (das der PBR-Pipeline – deshalb bekommt jede eigene Pipeline genau die Shader-Eingaben der Seite [[NoS 5|NoS-5-Shader-Schnittstelle]]), die Attachment-Formate, Viewport und Scissor.
+Alles andere legt die Engine fest: Vertex-Layout, Topologie (Triangle List), Blending (aus), Multisampling, das Pipeline-Layout (das der PBR-Pipeline – deshalb bekommt jede eigene Pipeline genau die Shader-Eingaben der Seite [[NoS 5|NoS-5-Shader-Schnittstelle]]), die Attachment-Formate, Viewport und Scissor.
 
 ## `AddToPipeline`
 
@@ -82,7 +80,7 @@ bool AddToPipeline(const std::string &name, SceneObject *object);
 
 ## So zeigt die Terminalausgabe eine Pipeline
 
-Der Block der eigenen Pipeline aus dem Beispiel oben; die vier Einstellungen sind `yours`, der Rest `fixed`:
+Der Block der eigenen Pipeline aus dem Beispiel oben; die drei Einstellungen sind `yours`, der Rest `fixed`:
 
 ```
 Pipeline "toon"    shaders/toon.slang -> shaders/toon.spv
@@ -97,13 +95,13 @@ Pipeline "toon"    shaders/toon.slang -> shaders/toon.spv
         |
   Depth test         on, writes depth                           yours
         |
-  Color blending     off                                        yours
+  Color blending     off                                        fixed
         |
   Attachments        off-screen color image + depth image       fixed
 
   Objects            Room
 ```
 
-Mit `blending` an ändern sich drei Zeilen: `Depth test  on, no depth writes`, `Color blending  on, drawn in the transparent pass`, `Attachments  swap chain image + depth image`. Die Pipeline der Engine, `"pbr"`, zeigt `cull mode: back`, `off (on for blended materials)` und in jeder Zeile `fixed`; undurchsichtig, gemischt oder Glas wählt sie aus dem glTF-Material. Wie der ganze Block gelesen wird: [[Pipeline-Ansicht|Pipeline-Ansicht]].
+Die Pipeline der Engine, `"pbr"`, zeigt `cull mode: back`, `off (on for blended materials)` und in jeder Zeile `fixed`; undurchsichtig, gemischt oder Glas wählt sie aus dem glTF-Material. Wie der ganze Block gelesen wird: [[Pipeline-Ansicht|Pipeline-Ansicht]].
 
 Engine-Dokumentation: [`docs/ARCHITECTURE.md`, *Named pipelines*](https://github.com/Puro-cs/Vulkan-Rendering-Engine/blob/main/docs/ARCHITECTURE.md#named-pipelines-planned-change-4-own-code), [`docs/ROADMAP.md`, *Pipelines and shaders*](https://github.com/Puro-cs/Vulkan-Rendering-Engine/blob/main/docs/ROADMAP.md#pipelines-and-shaders).

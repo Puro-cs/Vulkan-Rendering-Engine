@@ -31,13 +31,12 @@ enum class CullMode
 /**
  * @brief The settings of a pipeline that the user chooses.
  *
- * Together with the shader file these are the four things a pipeline is made of for the user.
- * Everything else (vertex layout, topology, multisampling, pipeline layout, attachment formats)
+ * Together with the shader file these are the three things a pipeline is made of for the user.
+ * Everything else (vertex layout, topology, blending, multisampling, pipeline layout, attachment formats)
  * is fixed by the engine.
  */
 struct PipelineSettings
 {
 	CullMode cullMode  = CullMode::None;
 	bool     depthTest = true;
-	bool     blending  = false;        // true: no depth writes, drawn in the transparent pass
 };

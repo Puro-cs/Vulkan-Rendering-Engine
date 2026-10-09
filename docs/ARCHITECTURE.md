@@ -151,7 +151,7 @@ Three views on the terminal, in the form of `docs/ROADMAP.md`, "Terminal output"
 in the sandbox file): the initialization chain as one line per call (`[ok]`,
 the name, what the call does); every pipeline as a block (`Pipeline "toon"    shaders/toon.slang -> shaders/toon.spv`,
 then the seven stages input assembly, vertex shader `VSMain`, rasterization with the cull mode, fragment shader
-`PSMain`, depth test, color blending and attachments, each marked `yours` when it is one of the four settings of an
+`PSMain`, depth test, color blending and attachments, each marked `yours` when it is one of the three settings of an
 own pipeline and `fixed` otherwise, so every line of the engine's `"pbr"` block is fixed; then `Objects` with the
 names of the objects the pipeline draws). The frame sequence, one line per call with `[ok]`, is printed once after
 the first complete frame.
@@ -202,7 +202,7 @@ file changed.
 | `renderer.h` | the whole `Renderer` class declaration, UBO / push-constant structs, `LoadingPhase` | yes |
 | `renderer_core.cpp` | the seven renderer calls of the initialization chain (since planned change 7; the tutorial's `Initialize()` split), instance, debug messenger, device and feature selection, cleanup, watchdog | yes |
 | `renderer_pipelines.cpp` | descriptor set layouts and graphics pipelines: PBR (opaque, blended, glass; a premultiplied-alpha variant is declared in `renderer.h` but never created, as in the tutorial) and composite. Since planned change 4 also the named pipelines: `createNamedPipeline()`, `CreatePipeline()`, `AddToPipeline()` (own code) | yes |
-| `pipeline_settings.h` | `CullMode`, `PipelineSettings` (cull mode, depth test, blending): the description of a named pipeline, without Vulkan types (own code, planned change 4) | yes |
+| `pipeline_settings.h` | `CullMode`, `PipelineSettings` (cull mode, depth test; blending removed 2026-10-09): the description of a named pipeline, without Vulkan types (own code, planned change 4) | yes |
 | `renderer_resources.cpp` | buffers, images, textures (KTX2 via libktx), mipmaps, per-entity resources, streaming queues | yes |
 | `renderer_rendering.cpp` | the six frame calls `BeginFrame` to `EndFrame` (since planned change 8; the tutorial's `Render()` split, see below), light extraction, culling, the "Renderer" ImGui panel | yes |
 | `renderer_utils.cpp` | shader module loading, memory type lookup, layout transitions, copy helpers | yes |
@@ -242,9 +242,10 @@ was deleted on 2026-09-21 with its pipeline, descriptor set layout and per-entit
 ## Named pipelines (planned change 4, own code)
 
 `Renderer::CreatePipeline(name, shaderFile, settings)` builds a pipeline for a student shader. The student chooses
-four things: the shader file (`"shaders/x.slang"`, loaded as `"shaders/x.spv"`, entry points `VSMain` and `PSMain`),
-the cull mode (default none), the depth test (default on; compare `LessOrEqual`) and blending (default off; on means
-the blend factors of the engine's blended pipeline, no depth writes, transparent pass). Everything else is copied
+three things: the shader file (`"shaders/x.slang"`, loaded as `"shaders/x.spv"`, entry points `VSMain` and `PSMain`),
+the cull mode (default none) and the depth test (default on; compare `LessOrEqual`). A named pipeline never blends
+and is always drawn in the opaque pass (the blending setting was removed on 2026-10-09, see `DELETIONS.md`: no
+object of the teaching unit is transparent). Everything else is copied
 from the opaque PBR pipeline, including the PBR pipeline layout, so every named pipeline receives exactly the inputs
 of the next section. The descriptions are kept in creation order and `recreateSwapChain()` rebuilds the pipelines
 from them. Call `CreatePipeline()` after `CreatePipelines()` (planned change 7; it creates the layout that is copied)
