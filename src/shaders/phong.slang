@@ -50,11 +50,11 @@ struct VSOutput {
 
 // Phong model of the lecture:
 //   c(x) = c_amb * k_amb + c_light / (k1 + k2 * d) * (k_diff * <n, L> + k_spec * O_spec * <n, H>^n)
-// Material constants for gold: k_amb and k_diff are the colour of the ambient and the diffuse term,
-// k_spec * O_spec the colour of the highlight, n the shininess (exponent).
-static const float3 kAmbient  = float3(0.5, 0.5, 0.0);
-static const float3 kDiffuse  = float3(0.5, 0.5, 0.0);
-static const float3 kSpecular = float3(1.0, 1.0, 0.0);    // k_spec * O_spec
+// Material constants for gold, from the lecture's table (exponent n, k_diff, k_spec; the table has no k_amb,
+// so the ambient term uses k_diff, and k_spec is already the colour of the highlight, so O_spec = 1).
+static const float3 kAmbient  = float3(0.5, 0.5, 0.0);    // k_amb = k_diff
+static const float3 kDiffuse  = float3(0.5, 0.5, 0.0);    // k_diff
+static const float3 kSpecular = float3(1.0, 1.0, 0.0);    // k_spec (times O_spec = 1)
 static const float  shininess = 32.0;                     // n
 static const float3 cAmbient  = float3(0.2, 0.2, 0.2);    // c_amb: the ambient light of the scene
 static const float  k1 = 1.0;                             // distance attenuation c_light / (k1 + k2 * d)
