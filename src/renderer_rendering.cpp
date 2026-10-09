@@ -954,7 +954,7 @@ void Renderer::UpdateScene(const std::vector<Entity *>& entities, CameraComponen
 
       RenderJob job{entity, &entityRes, &meshRes, meshComponent, tc, isAlphaMasked};
       // An entity that was added to pipelines gets one job per pipeline, in the order in which the
-      // pipelines were created. A pipeline with blending is drawn in the transparent pass.
+      // pipelines were created. A named pipeline is drawn in the opaque pass.
       bool addedToPipelines = false;
       {
         std::lock_guard<std::mutex> lk(entityPipelinesMutex);
@@ -966,7 +966,7 @@ void Renderer::UpdateScene(const std::vector<Entity *>& entities, CameraComponen
             bool pipelineBlended = useBlended; // "pbr": the material decides, as for every other entity
             if (pipelineIndex != PBR_PIPELINE) {
               pipelineJob.pipeline = &namedPipelines[pipelineIndex].pipeline;
-              pipelineBlended = namedPipelines[pipelineIndex].settings.blending;
+              pipelineBlended = false;
             }
             if (pipelineBlended) {
               transparentJobs.push_back(pipelineJob);
@@ -1386,9 +1386,6 @@ void Renderer::DrawScene() {
 
         for (const auto& job : transparentJobs) {
           vk::raii::Pipeline* desiredPipeline = job.entityRes->cachedIsGlass ? &glassGraphicsPipeline : &pbrBlendGraphicsPipeline;
-          if (job.pipeline) {
-            desiredPipeline = job.pipeline; // a named pipeline with blending the entity was added to
-          }
           if (desiredPipeline != activeTransparentPipeline) {
             commandBuffers[currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, **desiredPipeline);
             activeTransparentPipeline = desiredPipeline;

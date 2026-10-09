@@ -744,7 +744,7 @@ class Renderer {
 	 * entry points VSMain and PSMain. The name "pbr" is reserved for the engine's own pipelines.
 	 * @param name The name of the pipeline, used by AddToPipeline().
 	 * @param shaderFile The shader source, e.g. "shaders/toon.slang" (the build compiles it to "shaders/toon.spv").
-	 * @param settings Cull mode, depth test and blending.
+	 * @param settings Cull mode and depth test.
 	 * @return True if the pipeline was created, false otherwise.
 	 */
     bool CreatePipeline(const std::string& name, const std::string& shaderFile, const PipelineSettings& settings = {});

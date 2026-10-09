@@ -75,9 +75,9 @@ binding 0 and the material push constants, which is exactly the PBR layout the e
   consequences: `pbr.spv` differs from the tutorial's, glass has no light highlights. Log: `docs/DELETIONS.md`.
 - 2026-09-21, `done`, Rule 1, planned change 4: named pipelines. `Renderer::CreatePipeline(name, shaderFile,
   settings)` builds a pipeline from a description (`pipeline_settings.h`: cull mode, default none; depth test;
-  blending), patterned on the opaque pipeline of `createPBRPipeline()` and using the PBR layout; the descriptions are
+  blending — removed again on 2026-10-09), patterned on the opaque pipeline of `createPBRPipeline()` and using the PBR layout; the descriptions are
   kept so that `recreateSwapChain()` rebuilds the pipelines; `AddToPipeline(name, entity)` (none: `"pbr"`; several:
-  one draw per pipeline in creation order; blending: the transparent pass); the list per entity lives in the
+  one draw per pipeline in creation order; until 2026-10-09 blending: the transparent pass); the list per entity lives in the
   renderer. One tutorial line changed (`sort` became `stable_sort`). The owner ran the temporary test (the room drawn
   with a pipeline from `template.slang`) successfully; the test lines were removed again. A crash at the first run
   came from stale object files, not from the code (see `docs/BUILD.md`). Closes `einfache_pipeline` and
@@ -146,7 +146,7 @@ binding 0 and the material push constants, which is exactly the PBR layout the e
   `shaders/template.slang` on `learning` declares the light buffer (binding 6) and the material push constants, hands
   the world position and the world-space normal from `VSMain` to `PSMain` (the lines of `pbr.slang`, incl. the
   transposed instance normal matrix) and carries the three comments `// ambient`, `// diffuse`, `// specular` before
-  `return baseColor;` — the slots of the worksheet's Phong task. `main`'s template stays the blank one. (c)
+  `return baseColor;` — the slots of the worksheet's Phong task. `main` got the same template on 2026-10-09 (one template on every branch). (c)
   `docs/BUILD.md`: the camera keys corrected after the code (`Q` up, `E` down). Decided in the thesis project
   (`C:\ClaudeWorkspace\BA`, `docs/DESIGN_RULES.md` I-01 to I-03, `docs/STEP4_REVIEW.md` §5). Log: `docs/DELETIONS.md`,
   "Added code".
@@ -224,9 +224,9 @@ is open. The names of calls and files (`IsRunning`, `AddToPipeline`, `CreateSphe
 - One pipeline per shader, any number of objects per pipeline. A pipeline is one shader file (vertex and fragment
   shader) plus fixed-function state; it is created once and never changes. Objects do not own pipelines, and a
   pipeline cannot hold several shaders of the same stage.
-- Students set four things: the shader file, the cull mode, the depth test and blending. Everything else (vertex
-  layout, topology, multisampling, pipeline layout, attachment formats) is fixed by the engine. Blending switched on
-  also means: no depth writes, drawn in the transparent pass.
+- Students set three things: the shader file, the cull mode and the depth test. Everything else (vertex
+  layout, topology, blending, multisampling, pipeline layout, attachment formats) is fixed by the engine. (Until
+  2026-10-09 blending was a fourth setting; removed because no object of the teaching unit is transparent, owner.)
 - Pipelines are created in the initialisation chain only, after `InitializeRendering()`:
   `CreatePipeline(name, shaderFile, settings)`. `CreatePipelines()` creates the engine's own; the one students see
   is `"pbr"`, the default of every object. (Since planned change 7 the check is "after `CreatePipelines()`": the
@@ -321,7 +321,7 @@ Pipeline "toon"    shaders/toon.spv
         |
   Depth test         on, writes depth                           yours
         |
-  Colour blending    off                                        yours
+  Colour blending    off                                        fixed
         |
   Attachments        off-screen colour image + depth image      fixed
 

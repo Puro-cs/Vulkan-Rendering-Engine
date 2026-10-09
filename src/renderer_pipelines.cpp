@@ -514,7 +514,7 @@ bool Renderer::createCompositePipeline() {
 // Create a named pipeline from its description.
 // Patterned on the opaque pipeline of createPBRPipeline(): same vertex input, same pipeline layout
 // (PBR descriptor sets and material push constants), same attachment formats. Only the shader file,
-// the cull mode, the depth test and blending come from the description.
+// the cull mode and the depth test come from the description.
 bool Renderer::createNamedPipeline(NamedPipeline& namedPipeline) {
   try {
     // Read shader code. The build compiles "shaders/x.slang" to "shaders/x.spv".
@@ -617,26 +617,15 @@ bool Renderer::createNamedPipeline(NamedPipeline& namedPipeline) {
     depthStencil.stencilTestEnable = vk::False;
 
     // Setting: depth test. LessOrEqual, so that an entity that is drawn by several pipelines
-    // also shows the later ones. A pipeline with blending does not write depth.
+    // also shows the later ones.
     depthStencil.depthTestEnable = namedPipeline.settings.depthTest ? vk::True : vk::False;
-    depthStencil.depthWriteEnable = (namedPipeline.settings.depthTest && !namedPipeline.settings.blending) ? vk::True : vk::False;
+    depthStencil.depthWriteEnable = namedPipeline.settings.depthTest ? vk::True : vk::False;
     depthStencil.depthCompareOp = vk::CompareOp::eLessOrEqual;
 
     // Create a color blend attachment state
     vk::PipelineColorBlendAttachmentState colorBlendAttachment{};
     colorBlendAttachment.blendEnable = vk::False;
     colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
-
-    // Setting: blending, as in the blended PBR pipeline
-    if (namedPipeline.settings.blending) {
-      colorBlendAttachment.blendEnable = VK_TRUE;
-      // Straight alpha blending: out.rgb = src.rgb*src.a + dst.rgb*(1-src.a)
-      colorBlendAttachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
-      colorBlendAttachment.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
-      // Alpha channel keeps destination scaled by inverse src alpha
-      colorBlendAttachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
-      colorBlendAttachment.dstAlphaBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
-    }
 
     // Create color blend state info
     vk::PipelineColorBlendStateCreateInfo colorBlending{};
@@ -680,8 +669,8 @@ bool Renderer::createNamedPipeline(NamedPipeline& namedPipeline) {
     pipelineInfo.pDepthStencilState = &depthStencil;
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
-    // The layouts of the PBR pipelines: opaque pass or transparent pass
-    pipelineInfo.layout = namedPipeline.settings.blending ? *pbrTransparentPipelineLayout : *pbrPipelineLayout;
+    // The layout of the opaque PBR pipeline
+    pipelineInfo.layout = *pbrPipelineLayout;
 
     namedPipeline.pipeline = vk::raii::Pipeline(device, nullptr, pipelineInfo);
     return true;

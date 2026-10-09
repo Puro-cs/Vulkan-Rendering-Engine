@@ -581,7 +581,7 @@ static void PrintPipeline(std::ostream &out, const PipelineView &pipeline, const
 	out << "Pipeline \"" << pipeline.name << "\"    " << pipeline.shaderFile << " -> " << spvFile << std::endl;
 	out << std::endl;
 
-	// The four settings of the student; the engine's own pipeline has none
+	// The three settings of the student; the engine's own pipeline has none
 	const char *yours    = pipeline.engine ? "fixed" : "yours";
 	const char *cullMode = "none";
 	switch (pipeline.settings.cullMode)
@@ -596,9 +596,9 @@ static void PrintPipeline(std::ostream &out, const PipelineView &pipeline, const
 			cullMode = "back";
 			break;
 	}
-	const char *depthTest   = !pipeline.settings.depthTest ? "off" : (pipeline.settings.blending ? "on, no depth writes" : "on, writes depth");
-	const char *blending    = pipeline.settings.blending ? "on, drawn in the transparent pass" : (pipeline.engine ? "off (on for blended materials)" : "off");
-	const char *attachments = pipeline.settings.blending ? "swap chain image + depth image" : "off-screen color image + depth image";
+	const char *depthTest   = !pipeline.settings.depthTest ? "off" : "on, writes depth";
+	const char *blending    = pipeline.engine ? "off (on for blended materials)" : "off";
+	const char *attachments = "off-screen color image + depth image";
 
 	const auto stage = [&out](const char *name, const std::string &description, const char *who) {
 		out << "  " << std::left << std::setw(19) << name << std::setw(43) << description << who << std::endl;
@@ -614,7 +614,7 @@ static void PrintPipeline(std::ostream &out, const PipelineView &pipeline, const
 	connector();
 	stage("Depth test", depthTest, yours);
 	connector();
-	stage("Color blending", blending, yours);
+	stage("Color blending", blending, "fixed");
 	connector();
 	stage("Attachments", attachments, "fixed");
 	out << std::endl;
@@ -808,7 +808,7 @@ bool Sandbox::CreatePipelines()
 	}
 	// For the terminal output: the engine's pipeline, the default of every object, with the shader
 	// and the settings of the opaque PBR pipeline (Renderer::createPBRPipeline)
-	impl->pipelineViews.push_back({"pbr", "shaders/pbr.slang", PipelineSettings{CullMode::Back, true, false}, true, {}});
+	impl->pipelineViews.push_back({"pbr", "shaders/pbr.slang", PipelineSettings{CullMode::Back, true}, true, {}});
 	return true;
 }
 

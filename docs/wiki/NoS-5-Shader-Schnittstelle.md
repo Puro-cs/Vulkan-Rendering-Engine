@@ -4,7 +4,7 @@ Diese Seite ist die Referenz des Template-Shaders: seine Stufen, die festen Eing
 
 ## Beispiel: der Template-Shader
 
-`src/shaders/template.slang` ist der Ausgangspunkt für jeden eigenen Shader: eine Kopie davon unter neuem Namen in `src/shaders/`, dann eine Pipeline daraus ([[NoS 3|NoS-3-Pipeline-Konfiguration]]). Seine Form (Branch `learning`):
+`src/shaders/template.slang` ist der Ausgangspunkt für jeden eigenen Shader: eine Kopie davon unter neuem Namen in `src/shaders/`, dann eine Pipeline daraus ([[NoS 3|NoS-3-Pipeline-Konfiguration]]). Seine Form:
 
 ```slang
 import common_types;
@@ -126,7 +126,7 @@ CMake übersetzt jede `src/shaders/*.slang` beim **Bauen** (`slangc ... -target 
 
 ## Der Weg der Ausgabe auf den Bildschirm
 
-`PSMain` gibt eine **lineare** Farbe zurück. In einer Pipeline ohne `blending` geht sie in das Off-Screen-Bild, und der *composite*-Pass der Engine wendet die Belichtung (*Exposure*, Standard **1,2**, Schieberegler im Panel) und ein filmisches Tone Mapping an, bevor sie auf dem Bildschirm erscheint. Mit `blending` wird direkt auf das Swap-Chain-Bild gezeichnet, nach dem *composite*-Pass, ohne Tone Mapping.
+`PSMain` gibt eine **lineare** Farbe zurück. Sie geht in das Off-Screen-Bild, und der *composite*-Pass der Engine wendet die Belichtung (*Exposure*, Standard **1,2**, Schieberegler im Panel) und ein filmisches Tone Mapping an, bevor sie auf dem Bildschirm erscheint.
 
 Folge für das Debuggen mit Farben: Shader-Variablen lassen sich nicht drucken, aber als Farbe ausgeben – `return float4(n * 0.5 + 0.5, 1.0);` zeigt die Normale, `return float4(diffuse, 0.0, 0.0, 1.0);` einen Term im Rotkanal. Weil die Ausgabe skaliert und getont wird, wird eine solche Farbe nach **Richtung und Kanal** gelesen (wo ist es hell, wo dunkel, welcher Kanal), nicht nach ihrem Zahlenwert.
 

@@ -268,7 +268,7 @@ class Sandbox
 	 * pipelines, which have to exist.
 	 * @param name The name of the pipeline, used by AddToPipeline(). "pbr" is the pipeline of the engine.
 	 * @param shaderFile The shader, e.g. "shaders/toon.slang". It needs the entry points VSMain and PSMain.
-	 * @param settings Cull mode, depth test and blending.
+	 * @param settings Cull mode and depth test.
 	 * @return True if the pipeline was created, false otherwise.
 	 */
 	bool CreatePipeline(const std::string &name, const std::string &shaderFile, const PipelineSettings &settings = {});
