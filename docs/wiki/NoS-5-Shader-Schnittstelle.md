@@ -4,7 +4,7 @@ Diese Seite ist die Referenz des Template-Shaders: seine Stufen, die festen Eing
 
 ## Beispiel: der Template-Shader
 
-`src/shaders/template.slang` ist der Ausgangspunkt für jeden eigenen Shader: eine Kopie davon unter neuem Namen in `src/shaders/`, dann eine Pipeline daraus ([[NoS 3|NoS-3-Pipeline-Konfiguration]]). Seine Form:
+`src/shaders/template.slang` ist der Ausgangspunkt für jeden eigenen Shader: eine Kopie davon unter neuem Namen in `src/shaders/`, dann eine Pipeline daraus ([[NoS 3|NoS-3-Pipeline-Konfiguration]]). Seine Form (Branch `learning`; auf `main` ohne die drei Kommentare):
 
 ```slang
 import common_types;
