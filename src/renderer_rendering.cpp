@@ -1616,3 +1616,21 @@ void Renderer::EndFrame(ImGuiSystem* imguiSystem) {
 
   currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
+
+// A frame that will not be submitted (own code): BeginFrame() reset the fence of this frame slot, and
+// WaitIdle() at exit waits for every fence, so the fence is signaled here the way the early returns of
+// BeginFrame() do it. A skipped frame has had that empty submit already.
+void Renderer::AbandonFrame() {
+  if (memoryPool)
+    memoryPool->setRenderingActive(false);
+
+  if (frame.skipped)
+    return;
+
+  // Fence was reset earlier; ensure it is signaled before we bail out
+  {
+    vk::SubmitInfo2 emptySubmit2{};
+    std::lock_guard<std::mutex> lock(queueMutex);
+    graphicsQueue.submit2(emptySubmit2, *inFlightFences[currentFrame]);
+  }
+}

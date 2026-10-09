@@ -261,6 +261,10 @@ void Engine::EndFrame() {
   renderer->EndFrame(imguiSystem.get());
 }
 
+void Engine::AbandonFrame() {
+  renderer->AbandonFrame();
+}
+
 void Engine::Cleanup() {
   if (initialized) {
     // Wait for the device to be idle before cleaning up
