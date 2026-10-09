@@ -146,7 +146,7 @@ binding 0 and the material push constants, which is exactly the PBR layout the e
   `shaders/template.slang` on `learning` declares the light buffer (binding 6) and the material push constants, hands
   the world position and the world-space normal from `VSMain` to `PSMain` (the lines of `pbr.slang`, incl. the
   transposed instance normal matrix) and carries the three comments `// ambient`, `// diffuse`, `// specular` before
-  `return baseColor;` — the slots of the worksheet's Phong task. `main`'s template stays the blank one. (c)
+  `return baseColor;` — the slots of the worksheet's Phong task. `main` got the same template on 2026-10-09 (one template on every branch). (c)
   `docs/BUILD.md`: the camera keys corrected after the code (`Q` up, `E` down). Decided in the thesis project
   (`C:\ClaudeWorkspace\BA`, `docs/DESIGN_RULES.md` I-01 to I-03, `docs/STEP4_REVIEW.md` §5). Log: `docs/DELETIONS.md`,
   "Added code".
