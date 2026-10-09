@@ -78,11 +78,5 @@ float4 PSMain(VSOutput input) : SV_TARGET
     float2 uv = float2(input.UV.x, 1.0 - input.UV.y);
     float4 baseColor = baseColorMap.Sample(uv);
 
-    // ambient
-
-    // diffuse
-
-    // specular
-
     return baseColor;
 }
