@@ -35,7 +35,7 @@ void SetupScene(Sandbox &sandbox)
 	// Create a directional light. A light shines along the -Z axis; the rotation turns it down and sideways.
 	Light *sun = sandbox.CreateLight("Sun", LightType::Directional);
 	sun->SetRotation({-45.0f, 45.0f, 0.0f});
-	sun->SetIntensity(3.0f);
+	sun->SetIntensity(1.0f);        // 1 instead of the example's 3, as in the worksheet (Aufgabe 3): above 1 the highlight clips
 
 	// Load a model. The call waits until the model is loaded.
 	SceneObject *room = sandbox.LoadModel("Room", "../assets/viking_room/viking_room.gltf");
