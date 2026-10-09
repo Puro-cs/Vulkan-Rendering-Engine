@@ -834,6 +834,12 @@ bool Sandbox::Impl::FrameSequenceError(const char *caller, const char *what, con
 	PrintFrameSequence(std::cerr, caller, reason);
 	std::cerr << std::endl;
 	renderingStopped = true;
+
+	// A frame that BeginFrame() began is never submitted now; end it, or the engine waits for it at exit
+	if (expectedCall != BeginFrameCall)
+	{
+		engine.AbandonFrame();
+	}
 	return false;
 }
 
@@ -867,6 +873,12 @@ void Sandbox::Impl::FrameCall(int call, const std::function<void()> &work)
 		PrintFrameSequence(std::cerr, FRAME_CALL_NAMES[call], "failed");
 		std::cerr << std::endl;
 		renderingStopped = true;
+
+		// As in FrameSequenceError(); a failed EndFrame() may have submitted already
+		if (call != EndFrameCall)
+		{
+			engine.AbandonFrame();
+		}
 		return;
 	}
 	expectedCall = (call + 1) % FrameCallCount;

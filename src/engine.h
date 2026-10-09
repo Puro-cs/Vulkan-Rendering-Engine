@@ -153,6 +153,11 @@ class Engine
 	void EndFrame();
 
 	/**
+	 * @brief End a frame that was begun and will not be submitted (rendering stopped after an error).
+	 */
+	void AbandonFrame();
+
+	/**
 	 * @brief Clean up engine resources.
 	 */
 	void Cleanup();

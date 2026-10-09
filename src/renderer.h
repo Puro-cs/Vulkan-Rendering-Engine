@@ -288,6 +288,13 @@ class Renderer {
     void EndFrame(ImGuiSystem* imguiSystem);
 
     /**
+	 * @brief End a frame that BeginFrame() began and that will not be submitted, because the sandbox file
+	 * stopped rendering: signal this frame slot's fence with the empty submit of BeginFrame()'s early
+	 * returns, so that WaitIdle() at exit does not wait for it forever.
+	 */
+    void AbandonFrame();
+
+    /**
 	 * @brief Wait for the device to be idle.
 	 */
     void WaitIdle();

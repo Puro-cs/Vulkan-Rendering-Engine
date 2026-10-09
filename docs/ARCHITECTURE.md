@@ -87,7 +87,7 @@ delta time, FPS title) and is false once the window was closed; the six calls ar
 call that is expected next: a frame call out of order prints `Frame sequence error: DrawScene() cannot run yet.
 Rendering stopped.` (since 2026-10-04 without the name of the call that is missing, see "Terminal output"; a call
 that was already made in the frame prints `... was called twice in this frame`), every later frame call does
-nothing, and `IsRunning()` returns false, so the loop ends and the program exits normally. `IsRunning()` itself requires the previous frame to be
+nothing, and `IsRunning()` returns false, so the loop ends and the program exits normally (a frame that `BeginFrame()` had begun is ended with `Engine::AbandonFrame()`, the empty submit that signals its fence; without it the exit waited for that fence forever, fixed 2026-10-10). `IsRunning()` itself requires the previous frame to be
 complete (a forgotten `EndFrame()` is reported the same way) and, on its first call, the complete initialization
 chain and an active camera; the first call also does what the old `Run()` did before its loop: it ends the load
 cycle when no model was loaded and starts the terminal reader. An exception inside a frame call is printed and stops
