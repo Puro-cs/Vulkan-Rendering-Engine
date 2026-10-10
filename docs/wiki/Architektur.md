@@ -12,7 +12,7 @@ sandbox.cpp        die eigene Datei: SetupScene() und main(); bindet nur sandbox
       Renderer     alles Vulkan: MemoryPool, ThreadPool, SwapChain, VulkanDevice
 ```
 
-Jede Gruppe von Vulkan-Schritten ist **ein** Aufruf der Sandbox-Datei (die Seiten NoS 1 bis NoS 6). Was die Sandbox-Datei nicht erreicht, ist die Kern-Infrastruktur dieser Seite: die Vulkan-API selbst, ImGui, Descriptor Sets, die Speicherverwaltung, das Innere der Swap Chain und des Rendering-Aufbaus. Die Engine nutzt Vulkan 1.3 über `vulkan.hpp` (RAII-Handles, dynamischer Dispatch), durchgehend *dynamic rendering* und *synchronization2*, keine Render Passes und Framebuffers; C++20, Slang-Shader, Dear ImGui 1.92.
+Jede Gruppe von Vulkan-Schritten ist **ein** Aufruf der Sandbox-Datei (NoS 1 bis NoS 6, verteilt auf die Seiten 1 bis 3 der Aufgaben). Was die Sandbox-Datei nicht erreicht, ist die Kern-Infrastruktur dieser Seite: die Vulkan-API selbst, ImGui, Descriptor Sets, die Speicherverwaltung, das Innere der Swap Chain und des Rendering-Aufbaus. Die Engine nutzt Vulkan 1.3 über `vulkan.hpp` (RAII-Handles, dynamischer Dispatch), durchgehend *dynamic rendering* und *synchronization2*, keine Render Passes und Framebuffers; C++20, Slang-Shader, Dear ImGui 1.92.
 
 ## Entities und Komponenten
 
@@ -26,11 +26,11 @@ Die Szene besteht aus Entities; jede Entity ist eine Liste von Komponenten:
 | `LightComponent` | Typ, Farbe, Intensität, Reichweite, Kegelwinkel; Position und Richtung kommen aus dem Transform der Entity |
 | `TerminalCommandComponent` | wendet einmal pro Frame die getippten Terminalbefehle an |
 
-Ein geladenes glTF-Modell wird zu **einer Entity je Material** (benannt `<Modell>_Material_<Index>_<Materialname>`), alle mit dem Transform des Objekts; `Part()` auf der Seite [[NoS 4|NoS-4-Geometrie-und-Assets]] spricht eine davon an.
+Ein geladenes glTF-Modell wird zu **einer Entity je Material** (benannt `<Modell>_Material_<Index>_<Materialname>`), alle mit dem Transform des Objekts; `Part()` auf der Seite [[2 Eigene Pipeline und eigene Szene|2-Eigene-Pipeline-und-eigene-Szene]] spricht eine davon an.
 
 ## Ein Frame: sechs Aufrufe außen, vier Pässe innen
 
-Die Sandbox-Datei macht sechs Aufrufe je Frame ([[NoS 2|NoS-2-Frame-Ablauf]]) und sieht **einen** Pass. Innen laufen vier: (1) die undurchsichtigen Objekte in ein Off-Screen-Farbbild; (1b) *composite* – dieses Bild wird mit Belichtung (*exposure*) und filmischem Tone Mapping auf das Swap-Chain-Bild gezeichnet; (2) die transparenten Objekte direkt auf das Swap-Chain-Bild; (3) die Bedienoberfläche der Engine. Ein Pass ist ein `beginRendering` … `endRendering`-Paar im Command Buffer mit seinen Attachments (den Bildern, in die gezeichnet wird: Farbe und Tiefe); darin werden beliebig viele Objekte mit beliebig vielen Pipelines gezeichnet. Eine eigene Pipeline wird für die Attachments ihres Passes gebaut – deshalb ändert sich ihre `Attachments`-Zeile in der [[Pipeline-Ansicht|Pipeline-Ansicht]] mit `blending`: aus = Pass 1, an = Pass 2. Die Sandbox-Datei kann keinen Pass hinzufügen.
+Die Sandbox-Datei macht sechs Aufrufe je Frame ([[1 Initialisierungskette und Frame-Ablauf|1-Initialisierungskette-und-Frame‐Ablauf]]) und sieht **einen** Pass. Innen laufen vier: (1) die undurchsichtigen Objekte in ein Off-Screen-Farbbild; (1b) *composite* – dieses Bild wird mit Belichtung (*exposure*) und filmischem Tone Mapping auf das Swap-Chain-Bild gezeichnet; (2) die transparenten Objekte direkt auf das Swap-Chain-Bild; (3) die Bedienoberfläche der Engine. Ein Pass ist ein `beginRendering` … `endRendering`-Paar im Command Buffer mit seinen Attachments (den Bildern, in die gezeichnet wird: Farbe und Tiefe); darin werden beliebig viele Objekte mit beliebig vielen Pipelines gezeichnet. Eine eigene Pipeline zeichnet immer in Pass 1 und wird für dessen Attachments gebaut; ihre `Attachments`-Zeile in der [[Pipeline-Ansicht|Pipeline-Ansicht]] lautet deshalb immer `off-screen color image + depth image`. Die Sandbox-Datei kann keinen Pass hinzufügen.
 
 ## Was die Engine sonst noch tut
 
@@ -60,11 +60,11 @@ Vulkan überlässt die Speicherverwaltung vollständig dem Entwickler. Die Engin
 
 ### KI 5 Pipeline-Generierung und Shader-Kompilierung
 
-Vulkan verlangt das Befüllen monolithischer Pipeline-Strukturen und `VkShaderModule`-Instanzen aus SPIR-V. Die Engine: CMake übersetzt beim Bauen jede `src/shaders/*.slang` außer den vier Modulen mit `slangc -target spirv -profile spirv_1_3` und `spirv-opt`; zur Laufzeit lädt `createShaderModule()` das SPIR-V; `CreatePipelines` baut die eigenen Pipelines der Engine (PBR undurchsichtig / gemischt / Glas, composite); `CreatePipeline` macht aus den vier Einstellungen eine vollständige Pipeline und kopiert alles andere von der undurchsichtigen PBR-Pipeline. **Sichtbar:** die Aufrufe der Seite [[NoS 3|NoS-3-Pipeline-Konfiguration]]; der Pipeline-Block mit `<Datei>.slang -> <Datei>.spv`; das erneute Konfigurieren nach einer neuen Shader-Datei.
+Vulkan verlangt das Befüllen monolithischer Pipeline-Strukturen und `VkShaderModule`-Instanzen aus SPIR-V. Die Engine: CMake übersetzt beim Bauen jede `src/shaders/*.slang` außer den vier Modulen mit `slangc -target spirv -profile spirv_1_3` und `spirv-opt`; zur Laufzeit lädt `createShaderModule()` das SPIR-V; `CreatePipelines` baut die eigenen Pipelines der Engine (PBR undurchsichtig / gemischt / Glas, composite); `CreatePipeline` macht aus der Shader-Datei und den zwei Einstellungen eine vollständige Pipeline und kopiert alles andere von der undurchsichtigen PBR-Pipeline. **Sichtbar:** die Pipeline-Aufrufe der Seite [[2 Eigene Pipeline und eigene Szene|2-Eigene-Pipeline-und-eigene-Szene]]; der Pipeline-Block mit `<Datei>.slang -> <Datei>.spv`; das erneute Konfigurieren nach einer neuen Shader-Datei.
 
 ### KI 6 Descriptor-Management und UBO-Mapping
 
-Die Übersetzung der Szenendaten in den GPU-Speicher: Descriptor Pools, Layouts der Descriptor Sets, das Memory-Mapping der Uniform Buffer Objects. Die Engine: Descriptor Pool (`CreateCommandBuffers`), PBR-Descriptor-Set-Layouts (`CreatePipelines`), je Entity und Frame Uniform Buffers, dauerhaft gemappt; verzögerte Descriptor-Updates, wenn Texturen eintreffen; Materialfaktoren als Push Constants; die Lichter als Storage Buffer, jeden Frame hochgeladen. **Sichtbar:** die festen Shader-Eingaben mit ihren Set- und Binding-Nummern ([[NoS 5|NoS-5-Shader-Schnittstelle]]).
+Die Übersetzung der Szenendaten in den GPU-Speicher: Descriptor Pools, Layouts der Descriptor Sets, das Memory-Mapping der Uniform Buffer Objects. Die Engine: Descriptor Pool (`CreateCommandBuffers`), PBR-Descriptor-Set-Layouts (`CreatePipelines`), je Entity und Frame Uniform Buffers, dauerhaft gemappt; verzögerte Descriptor-Updates, wenn Texturen eintreffen; Materialfaktoren als Push Constants; die Lichter als Storage Buffer, jeden Frame hochgeladen. **Sichtbar:** die festen Shader-Eingaben mit ihren Set- und Binding-Nummern ([[3 Phong-Modell im Shader|3-Phong‐Modell-im-Shader]]).
 
 ### KI 7 Eingabeverwaltung und Panel
 
@@ -74,4 +74,4 @@ Die nativen Eingabe-Events des Windowing-Systems (GLFW) bleiben in der Engine; s
 
 Der ganze Lebenszyklus einer Textur – Staging, Layout-Übergänge, Mipmaps, Image View, Sampler. Die Engine: libktx dekodiert auf dem Thread-Pool; Staging-Upload; sRGB- oder lineares Format; gemeinsame Standardtexturen; Descriptor-Refresh, wenn eine Textur eintrifft. **Nur KTX2:** ein glTF, das PNG oder JPEG referenziert, lädt seine Geometrie mit der Standard-Albedo und einer Warnung. **Sichtbar:** die KTX2-Regel und die Warnungen ([[Eigene Modelle|Eigene-Modelle]]).
 
-Engine-Dokumentation: [`docs/ARCHITECTURE.md`](https://github.com/Puro-cs/Vulkan-Rendering-Engine/blob/main/docs/ARCHITECTURE.md) (*Ownership*, *The initialization chain*, *One frame*, *What a mesh shader gets from the engine*), [`docs/REQUIREMENTS.md`](https://github.com/Puro-cs/Vulkan-Rendering-Engine/blob/main/docs/REQUIREMENTS.md).
+Engine-Dokumentation: [`docs/ARCHITECTURE.md`](https://github.com/Puro-cs/Vulkan-Rendering-Engine/blob/main/docs/ARCHITECTURE.md) (*Ownership*, *The initialization chain*, *One frame*, *What a mesh shader gets from the engine*).

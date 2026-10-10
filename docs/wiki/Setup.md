@@ -20,15 +20,16 @@ Gebaut und gestartet wird die **Debug**-Konfiguration. Nur in Debug sind die Val
 
 ## Weg 1: Visual Studio
 
-1. Repository klonen und den Branch für das Aufgabenblatt auschecken:
+1. Repository in einer PowerShell klonen, am besten der *Developer PowerShell for VS*, in den Repository-Ordner wechseln und den Branch prüfen:
    ```
    git clone https://github.com/Puro-cs/Vulkan-Rendering-Engine
    cd Vulkan-Rendering-Engine
-   git checkout learning
+   git branch
    ```
+   Nach dem Klonen ist `main` mit der Beispielszene ausgecheckt (`git branch` zeigt `* main`); auf das Gerüst `learning` wechselt erst Aufgabe 1.
 2. In Visual Studio **Ordner öffnen** (*Open a local folder*) und den Repository-Ordner wählen. Visual Studio liest `CMakePresets.json` und konfiguriert mit dem Preset `windows-msvc`; dabei installiert vcpkg die Pakete.
 3. Konfiguration **Debug** (`windows-msvc-debug`) wählen, Ziel `VulkanRenderEngine.exe`, bauen.
-4. Starten (F5 oder Strg+F5). Das Arbeitsverzeichnis ist auf `src/` eingestellt (`VS_DEBUGGER_WORKING_DIRECTORY`); das Konsolenfenster, das mit der Exe aufgeht, ist das Terminal, in dem die Ausgabe steht und in das Terminalbefehle getippt werden.
+4. Starten (F5 oder Strg+F5). Das Arbeitsverzeichnis ist auf `src/` eingestellt (`VS_DEBUGGER_WORKING_DIRECTORY`); das Konsolenfenster, das mit der Exe aufgeht, ist die Engine-Konsole: Dort steht die Ausgabe der Engine, und dort werden Terminalbefehle getippt. Befehle wie `git`, `copy` und `cmake` gehören dagegen in eine PowerShell im Repository-Ordner.
 
 ## Weg 2: Kommandozeile (aus dem Repository-Ordner)
 
@@ -43,11 +44,11 @@ Die erste Zeile konfiguriert (einmal; beim ersten Mal mit der vcpkg-Installation
 
 ## Woran ein korrekter Start zu erkennen ist
 
-- ein Fenster 800 × 600, im Titel Frame-Zähler, FPS und ms;
-- im Terminal genau **eine** Meldung der Validation Layer (`robustBufferAccess2` ohne `robustBufferAccess`) – sie ist aus dem Tutorial geerbt und kein Fehler; jede andere Meldung ist neu;
+- ein Fenster 800 × 600, im Titel Frame-Zähler, FPS und ms; bei der Beispielszene zeigt es den beleuchteten Raum und die Kugel, darüber das Panel *Renderer* der Engine;
+- in der Engine-Konsole genau **eine** Meldung der Validation Layer (`robustBufferAccess2` ohne `robustBufferAccess`) – sie ist aus dem Tutorial geerbt und kein Fehler; jede andere Meldung ist neu;
 - bei der Beispielszene zwei harmlose Warnungen des Model-Loaders für den Viking Room (`Warning: No decoded bytes for baseColor texture index 0`, `Warning: Failed to extract punctual lights from ...`);
 - `Renderer: Ending load cycle without completion mark. Forcing completion to avoid deadlock.` ist das normale Ende des Ladens;
-- danach die Ausgabe `Initialization chain:` mit acht `[ok]`-Zeilen und ein Block je Pipeline (siehe [[Pipeline-Ansicht|Pipeline-Ansicht]]).
+- danach die drei Ansichten: `Initialization chain:` mit acht `[ok]`-Zeilen, der Block `Pipeline "pbr"` mit `Objects            Room, Sphere` und, nach dem ersten Frame, `Frame sequence:` mit sechs `[ok]`-Zeilen; keine Zeile mit `[!!]`. Der genaue Wortlaut steht auf der Seite [[Pipeline-Ansicht|Pipeline-Ansicht]].
 
 ## Nach einer neuen Shader-Datei: noch einmal konfigurieren
 
@@ -55,4 +56,4 @@ Die Liste der `*.slang`-Dateien wird beim Konfigurieren eingesammelt. Nach dem A
 
 Die kompilierten Shader (`*.spv`) liegen nicht im Repository: der Build erzeugt sie mit `slangc` aus dem Vulkan SDK und kopiert sie nach `src/shaders/`. Eine `.spv`-Datei wird nie von Hand angefasst; ihr Name taucht nur im Pipeline-Block der Terminalausgabe auf (`x.slang -> x.spv`).
 
-Engine-Dokumentation: [`docs/BUILD.md`](https://github.com/Puro-cs/Vulkan-Rendering-Engine/blob/main/docs/BUILD.md) (*Toolchain*, *Commands*, *Run*, *Expected console output in Debug*).
+Engine-Dokumentation: [`docs/ARCHITECTURE.md`, *Build files*](https://github.com/Puro-cs/Vulkan-Rendering-Engine/blob/main/docs/ARCHITECTURE.md#build-files).

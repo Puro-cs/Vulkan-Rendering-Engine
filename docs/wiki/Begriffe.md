@@ -48,7 +48,7 @@ Quellen: **[Spec]** = Glossar der Vulkan-Spezifikation; **[Spec, Pipelines]** = 
 | Begriff | Erklärung | Quelle |
 |---|---|---|
 | **input assembly**, **triangle list** | Die erste Stufe der Grafik-Pipeline setzt aus Vertices geometrische Primitive zusammen – Punkte, Linien, Dreiecke – nach der angeforderten Topologie; *triangle list* heißt: je drei Vertices ein Dreieck. | [Spec, Pipelines] *Input Assembler* |
-| **engine vertex layout** | Die festen Vertex-Attribute der Engine: Position, Normale, UV, Tangente und je Instanz die Modell- und die Normalenmatrix ([[NoS 5|NoS-5-Shader-Schnittstelle]]). | [Engine] ARCHITECTURE, *What a mesh shader gets from the engine* |
+| **engine vertex layout** | Die festen Vertex-Attribute der Engine: Position, Normale, UV, Tangente und je Instanz die Modell- und die Normalenmatrix ([[3 Phong-Modell im Shader|3-Phong‐Modell-im-Shader]]). | [Engine] ARCHITECTURE, *What a mesh shader gets from the engine* |
 | **vertex shader**, `VSMain` | Die Stufe, in der Vertices transformiert und ihre Positionen und Attribute berechnet werden; `VSMain` ist ihr Einstiegspunkt in jeder Shader-Datei der Engine. | [Spec, Pipelines] *Vertex Shader*; [Engine] ARCHITECTURE, *Named pipelines* |
 | **rasterization** | Der Rasterizer erzeugt aus der zweidimensionalen Beschreibung eines Punktes, einer Linie oder eines Dreiecks eine Folge von Fragmenten, die je einem Bereich des Framebuffers zugeordnet sind. | [Spec, Pipelines] *Rasterization* |
 | **cull mode** (`none` / `front` / `back`) | *Which side of a triangle a pipeline does not draw*: keine, die Vorder- oder die Rückseite; Vorderseiten sind die gegen den Uhrzeigersinn aufgezählten. | [Engine] `pipeline_settings.h`; ARCHITECTURE, *Named pipelines* |
@@ -56,7 +56,7 @@ Quellen: **[Spec]** = Glossar der Vulkan-Spezifikation; **[Spec, Pipelines]** = 
 | **depth test**, **writes depth** / **no depth writes** | Eine Fragment-Operation, die entscheidet, ob erzeugte Werte in den Framebuffer geschrieben werden – hier der Vergleich der Fragmenttiefe mit dem Tiefenbild (`LessOrEqual`); *writes depth* heißt, dass die Tiefe des gezeichneten Fragments ins Tiefenbild geschrieben wird. | [Spec, Pipelines] *Fragment operations*; [Engine] ARCHITECTURE, *Named pipelines* |
 | **color blending**, **transparent pass** | Blending sind Rechenoperationen zwischen der Fragmentfarbe und dem Wert im Color Attachment, die die endgültige Farbe ergeben; die Engine blendet nur ihre eigene Pipeline `"pbr"` bei transparenten glTF-Materialien, im transparenten Pass direkt auf das Swap-Chain-Bild; eigene Pipelines zeichnen ohne Blending. | [Spec] *Blending*; [Engine] ARCHITECTURE, *Named pipelines* |
 | `.slang`, `.spv` (**SPIR-V**) | SPIR-V ist eine binäre Zwischendarstellung für Shader-Stufen; Shader werden in einer Hochsprache – hier Slang – geschrieben und zu SPIR-V übersetzt, das `vkCreateShaderModule` braucht. Der Build übersetzt `x.slang` zu `x.spv`. | [Guide] *What is SPIR-V*; [Engine] BUILD, *Commands* |
-| **fixed** / **yours** | Markierung im Pipeline-Block: `yours` an den vier Einstellungen einer eigenen Pipeline, `fixed` an allem, was die Engine festlegt. | [Engine] ARCHITECTURE, *Terminal output* |
+| **fixed** / **yours** | Markierung im Pipeline-Block: `yours` an den vier Zeilen, die die Shader-Datei und die zwei Einstellungen einer eigenen Pipeline bestimmen, `fixed` an allem, was die Engine festlegt. | [Engine] ARCHITECTURE, *Terminal output* |
 
 ## Meldungen und Panel
 

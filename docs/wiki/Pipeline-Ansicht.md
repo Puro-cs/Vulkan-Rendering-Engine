@@ -56,7 +56,7 @@ Nie je Frame. Die Ausgabe ist Text mit festen Spalten, keine Zeichnung der GPU-P
 
 **Die Aufrufliste** (Kette und Frame-Ablauf): eine Zeile je Aufruf, `[ok]`, der Name, dann, was der Aufruf anlegt bzw. tut. Die Namensspalte ist so breit wie der längste gedruckte Name plus zwei. Die Zeilen sind die Aufrufe, **die die Sandbox-Datei gemacht hat** – die Ansicht nennt nie einen Aufruf, der nicht gemacht wurde.
 
-**Ein Pipeline-Block** je Pipeline, `"pbr"` zuerst, dann die eigenen in der Reihenfolge ihrer Erzeugung ([[NoS 3|NoS-3-Pipeline-Konfiguration]]). Die Kopfzeile nennt den Namen, die `.slang`-Datei und die `.spv`, in die der Build sie übersetzt. Darunter sieben Stufen, durch `|` verbunden:
+**Ein Pipeline-Block** je Pipeline, `"pbr"` zuerst, dann die eigenen in der Reihenfolge ihrer Erzeugung ([[2 Eigene Pipeline und eigene Szene|2-Eigene-Pipeline-und-eigene-Szene]]). Die Kopfzeile nennt den Namen, die `.slang`-Datei und die `.spv`, in die der Build sie übersetzt. Darunter sieben Stufen, durch `|` verbunden:
 
 | Stufe | zeigt |
 |---|---|
@@ -68,7 +68,7 @@ Nie je Frame. Die Ausgabe ist Text mit festen Spalten, keine Zeichnung der GPU-P
 | `Color blending` | `off`; bei `"pbr"` `off (on for blended materials)` – immer `fixed` |
 | `Attachments` | `off-screen color image + depth image` – immer `fixed` |
 
-`yours` steht an den drei Einstellungen einer eigenen Pipeline (Shader, Cull Mode, Depth Test), `fixed` an allem, was die Engine festlegt – und an jeder Zeile von `"pbr"`. Die letzte Zeile `Objects` nennt die Objekte, die die Pipeline zeichnet: Objekte, die keiner Pipeline zugewiesen sind, stehen unter `"pbr"`; ein einzeln hinzugefügter Teil heißt `Room.Texture1`; `none`, wenn die Pipeline nichts zeichnet.
+`yours` steht an den vier Zeilen, die die Shader-Datei und die zwei Einstellungen einer eigenen Pipeline bestimmen (`Vertex shader`, `Rasterization`, `Fragment shader`, `Depth test`), `fixed` an allem, was die Engine festlegt – und an jeder Zeile von `"pbr"`. Die letzte Zeile `Objects` nennt die Objekte, die die Pipeline zeichnet: Objekte, die keiner Pipeline zugewiesen sind, stehen unter `"pbr"`; ein einzeln hinzugefügter Teil heißt `Room.Texture1`; `none`, wenn die Pipeline nichts zeichnet.
 
 ## Der Fehlerfall
 
@@ -98,6 +98,6 @@ Die drei Gründe: `too early: …` (der Aufruf braucht etwas, das noch nicht exi
 
 ## Was die Ansicht nicht sagt – und wo es steht
 
-Die Ansicht nennt **nie den fehlenden Aufruf** und listet keine Aufrufe, die nicht gemacht wurden. Der Grund sagt, was der markierte Aufruf braucht; welcher Aufruf das anlegt und wo er in der Reihenfolge steht, steht auf [[NoS 1 Initialisierungskette|NoS-1-Initialisierungskette]] (die acht Aufrufe mit ihren Begründungen) und [[NoS 2 Frame-Ablauf|NoS-2-Frame-Ablauf]] (die sechs Aufrufe mit ihren Begründungen) – und in der Beispielszene auf `main`. So wird die Ansicht gelesen: (1) die `[!!]`-Zeile – welcher Aufruf ist es? (2) der Grund – was fehlt ihm? (3) auf NoS 1 / NoS 2 – welcher Aufruf legt das an, und steht er in der eigenen Datei vor dem markierten? Die Begriffe der Gründe: [[Begriffe]].
+Die Ansicht nennt **nie den fehlenden Aufruf** und listet keine Aufrufe, die nicht gemacht wurden. Der Grund sagt, was der markierte Aufruf braucht; welcher Aufruf das anlegt und wo er in der Reihenfolge steht, steht auf der Seite [[1 Initialisierungskette und Frame-Ablauf|1-Initialisierungskette-und-Frame‐Ablauf]] (die acht Aufrufe der Kette und die sechs eines Frames, jeweils mit ihren Begründungen) – und in der Beispielszene auf `main`. So wird die Ansicht gelesen: (1) die `[!!]`-Zeile – welcher Aufruf ist es? (2) der Grund – was fehlt ihm? (3) auf der Seite 1 – welcher Aufruf legt das an, und steht er in der eigenen Datei vor dem markierten? Die Begriffe der Gründe: [[Begriffe]].
 
 Engine-Dokumentation: [`docs/ARCHITECTURE.md`, *Terminal output*](https://github.com/Puro-cs/Vulkan-Rendering-Engine/blob/main/docs/ARCHITECTURE.md#terminal-output-planned-change-9-own-code).
