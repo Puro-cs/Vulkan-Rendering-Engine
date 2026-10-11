@@ -36,7 +36,7 @@ Die Sandbox-Datei macht sechs Aufrufe je Frame ([[1 Initialisierungskette und Fr
 
 - **Ein Rasterisierungspfad, ein Engine-Shader.** Jedes Objekt, das keiner eigenen Pipeline zugewiesen ist, wird mit `pbr.slang` gezeichnet (undurchsichtig, gemischt oder Glas, je nach glTF-Material). Entfernt wurden Physik, Audio, glTF-Animation, Ray Query, Forward+, planare Spiegelungen, andere Plattformen und der alte Phong-Pfad – *Phong shading is something the students implement themselves.*
 - **Culling und Distanz-LOD.** Ein Objekt außerhalb des Kamera-Frustums wird nicht gezeichnet; ebenso ein Objekt, dessen Hüllkugel auf weniger Pixel projiziert als eine Schwelle (Standard 1,5 px undurchsichtig, 2,5 px transparent, im Panel einstellbar). Es gibt keine LOD-Meshes, nichts wird vereinfacht. Ein kleines oder fernes Objekt, das verschwindet, ist dies und kein Fehler.
-- **Laden.** Ein Lade-Overlay deckt die ersten Frames ab, während Meshes und Texturen hochgeladen werden; Texturen werden auf einem Thread-Pool dekodiert; ein Watchdog bricht ab, wenn 10 s lang kein Frame fertig wird; ein Crash Reporter schreibt Minidumps nach `src/crashes/`.
+- **Laden.** Ein Lade-Overlay deckt die ersten Frames ab, während Meshes und Texturen hochgeladen werden; Texturen werden auf einem Thread-Pool dekodiert; ein Watchdog bricht ab, wenn 10 s lang kein Frame fertig wird (während ein Modell lädt erst nach 60 s, mit angehängtem Debugger nie); ein Crash Reporter schreibt Minidumps nach `src/crashes/`.
 
 ## Die Kern-Infrastruktur KI 1–8
 

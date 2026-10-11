@@ -594,7 +594,12 @@ class Renderer {
         // New load cycle starting
         initialLoadComplete.store(false, std::memory_order_relaxed);
         SetLoadingPhase(LoadingPhase::Scene);
+        // The sandbox loads on the main thread, which renders no frame until the load cycle ends:
+        // give the watchdog its longer grace period (60 s) meanwhile.
+        watchdogSuppressed.store(true, std::memory_order_relaxed);
       } else {
+        // The load counts as progress: the watchdog counts from here again.
+        lastFrameUpdateTime.store(std::chrono::steady_clock::now(), std::memory_order_relaxed);
         // Load cycle ending (successfully or not), ensure we don't stay in white-fallback state forever.
         // We don't call MarkInitialLoadComplete() here because that triggers "Finalizing" phase,
         // which the render thread uses to clear other flags. We just want to ensure IsLoading() can return false.
