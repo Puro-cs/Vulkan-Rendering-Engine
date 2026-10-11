@@ -26,6 +26,10 @@
 #include <thread>
 #include <type_traits>
 
+#ifdef _WIN32
+#	include <windows.h>        // IsDebuggerPresent() for the watchdog
+#endif
+
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE; // In a .cpp file
 
 #include <vulkan/vk_platform.h>
@@ -75,6 +79,14 @@ static void WatchdogThreadFunc(std::atomic<std::chrono::steady_clock::time_point
     if (!running->load(std::memory_order_relaxed)) {
       break; // Shutdown requested
     }
+
+#ifdef _WIN32
+    // A debugger that holds the program at a breakpoint, or steps through it, stops the frames as well.
+    // That is no hang, so the watchdog does not abort while a debugger is attached.
+    if (IsDebuggerPresent()) {
+      continue;
+    }
+#endif
 
     // Check if frame timestamp was updated recently.
     // Some operations can legitimately take

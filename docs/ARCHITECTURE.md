@@ -50,9 +50,9 @@ starts (the tutorial's `main.cpp` ran it on a background thread); the call retur
 with ModelLoader, creates one Entity per glTF mesh node (instanced when a mesh is reused), and hands GPU work to the
 Renderer through queues that are drained on the render thread during the first frames, behind the loading overlay
 (`ProcessPendingMeshUploads`, `ProcessPendingEntityPreallocations`, `ProcessDirtyDescriptorsForFrame`). Texture
-decoding still runs on the thread pool. All Vulkan submits happen on the main thread. Known limit: the engine's
-watchdog aborts when no frame finishes for 10 s, so a model that takes longer than that to parse trips it; planned
-change 8 can render progress frames while a model loads.
+decoding still runs on the thread pool. All Vulkan submits happen on the main thread. The engine's watchdog
+aborts when no frame finishes for 10 s; since 2026-10-11 a load has 60 s (`SetLoading(true)` sets
+`watchdogSuppressed`), and with a debugger attached the watchdog does not abort (see "One frame").
 
 ## The sandbox layer (planned change 5, own code)
 
@@ -304,8 +304,11 @@ still runs before the command buffer begins recording, which is what `isRecordin
 There is no depth pre-pass and no compute work any more; every opaque PBR draw uses `pbrGraphicsPipeline` (depth test
 `Less`, depth writes on).
 
-A watchdog thread checks `Render()` progress labels and aborts with the last label if no frame finishes for 10 s.
-`watchdogSuppressed` still exists, but only acceleration-structure builds ever set it, so it is always false now.
+A watchdog thread checks `Render()` progress labels and aborts with the last label if no frame finishes for 10 s,
+60 s while `watchdogSuppressed` is set. The tutorial set it only for acceleration-structure builds; since 2026-10-11
+`SetLoading(true)` sets it for the load of `Sandbox::LoadModel()`, which renders no frame, and `SetLoading(false)`
+counts the end of the load as progress. While a debugger is attached (`IsDebuggerPresent()`) the watchdog does not
+abort: a breakpoint stops the frames, and the watchdog's own thread too.
 
 ## Build files
 
