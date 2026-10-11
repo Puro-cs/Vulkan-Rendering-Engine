@@ -137,7 +137,7 @@ float4 PSMain(VSOutput input) : SV_TARGET
         // to keep the normal map oriented correctly after the V flip.
         float handedness = -input.Tangent.w;
         float3 B = normalize(cross(N, T)) * handedness;
-        float3x3 TBN = float3x3(T, B, N);
+        float3x3 TBN = transpose(float3x3(T, B, N));
         N = normalize(mul(TBN, tangentNormal));
     }
 
